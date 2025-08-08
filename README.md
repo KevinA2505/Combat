@@ -4,20 +4,26 @@ Este prototipo permite enfrentar dos ejércitos sobre un terreno generado de for
 
 ## Requisitos
 
+- [Node.js](https://nodejs.org/) y npm.
 - Navegador moderno con soporte WebGL (Chrome, Firefox, Edge, etc.).
-- No requiere instalación adicional: las dependencias se cargan desde CDNs.
 
 ## Uso
 
-1. Clona este repositorio y abre `batalla-npc.html` en tu navegador. Se recomienda iniciar un servidor local:
+1. Clona este repositorio e instala las dependencias:
 
    ```bash
-   python3 -m http.server
+   npm install
    ```
 
-   Luego visita `http://localhost:8000/batalla-npc.html`.
-2. En la pantalla **Configuración de batalla** ajusta la cantidad de unidades por equipo, la semilla procedural y la velocidad inicial de la simulación.
-3. Pulsa **Iniciar batalla** para comenzar o usa **Escaramuza rápida (5v5)** para un combate predeterminado.
+2. Inicia el servidor de desarrollo de Vite:
+
+   ```bash
+   npm run dev
+   ```
+
+   Abre en tu navegador `http://localhost:5173/batalla-npc.html`.
+3. En la pantalla **Configuración de batalla** ajusta la cantidad de unidades por equipo, la semilla procedural y la velocidad inicial de la simulación.
+4. Pulsa **Iniciar batalla** para comenzar o usa **Escaramuza rápida (5v5)** para un combate predeterminado.
 
 ### Controles durante la simulación
 
@@ -35,6 +41,8 @@ Este prototipo permite enfrentar dos ejércitos sobre un terreno generado de for
 
 ## Inicio rápido
 
-1. Ejecuta un servidor local y abre `batalla-npc.html`.
-2. Configura las unidades deseadas o usa la escaramuza rápida.
-3. Interactúa con los controles para gestionar la simulación y observar el resultado del combate.
+1. `npm install`
+2. `npm run dev`
+3. Abre `http://localhost:5173/batalla-npc.html`
+4. Configura las unidades deseadas o usa la escaramuza rápida.
+5. Interactúa con los controles para gestionar la simulación y observar el resultado del combate.
