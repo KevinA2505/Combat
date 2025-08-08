@@ -7,6 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 const config = {
   terrainSize: 100,
   obstacleDensity: 0.05,
+  maxSlope: 1.0,
   npcTypes: ['guerrero', 'arquero', 'mago'],
   attributes: {
     guerrero: { vida: 100, ataque: 20, velocidad: 3.0, defensa: 10, rango: 2.2, cadencia: 0.7 }, // unidades/seg
@@ -41,7 +42,7 @@ let rand = mulberry32(rngSeed);
 // ========================
 // Mapa de navegación
 // ========================
-let navGrid = null;
+let navGrid = null, heightMap = null;
 
 function initNavGrid(){
   const cellSize = 2;
@@ -72,6 +73,25 @@ function gridToWorld(gx, gz){
   const wz = gz * navGrid.cellSize - config.terrainSize/2 + navGrid.cellSize/2;
   const h = navGrid.cells[gz]?.[gx]?.height || 0;
   return new THREE.Vector3(wx, h + 1.1, wz);
+}
+
+function getTerrainHeight(x, z){
+  if(!heightMap) return 0;
+  const gx = (x + config.terrainSize/2) / navGrid.cellSize;
+  const gz = (z + config.terrainSize/2) / navGrid.cellSize;
+  const x0 = THREE.MathUtils.clamp(Math.floor(gx), 0, navGrid.width - 1);
+  const z0 = THREE.MathUtils.clamp(Math.floor(gz), 0, navGrid.height - 1);
+  const x1 = THREE.MathUtils.clamp(x0 + 1, 0, navGrid.width - 1);
+  const z1 = THREE.MathUtils.clamp(z0 + 1, 0, navGrid.height - 1);
+  const tx = gx - x0;
+  const tz = gz - z0;
+  const h00 = heightMap[z0]?.[x0] ?? 0;
+  const h10 = heightMap[z0]?.[x1] ?? 0;
+  const h01 = heightMap[z1]?.[x0] ?? 0;
+  const h11 = heightMap[z1]?.[x1] ?? 0;
+  const h0 = THREE.MathUtils.lerp(h00, h10, tx);
+  const h1 = THREE.MathUtils.lerp(h01, h11, tx);
+  return THREE.MathUtils.lerp(h0, h1, tz);
 }
 
 function isWalkable(gx, gz){
@@ -289,6 +309,7 @@ function generateTerrain(){
   if(terrain) { scene.remove(terrain); disposeMesh(terrain); terrain = null; }
   initNavGrid();
   const geom = new THREE.PlaneGeometry(config.terrainSize, config.terrainSize, 64, 64);
+  heightMap = Array.from({ length: navGrid.height }, () => Array(navGrid.width).fill(0));
   // Elevación simple (value noise / hash noise suavizado)
   const pos = geom.attributes.position;
   for(let i=0; i<pos.count; i++){
@@ -305,6 +326,24 @@ function generateTerrain(){
       const h = fbmNoise(wx*0.08, wz*0.08) * 4.0;
       navGrid.cells[gz][gx].height = h;
       navGrid.cells[gz][gx].walkable = true;
+      heightMap[gz][gx] = h;
+    }
+  }
+
+  // marcar celdas no caminables si la pendiente con vecinos es muy pronunciada
+  for(let gz=0; gz<navGrid.height; gz++){
+    for(let gx=0; gx<navGrid.width; gx++){
+      const h = navGrid.cells[gz][gx].height;
+      const neighbors = [[gx+1,gz],[gx-1,gz],[gx,gz+1],[gx,gz-1]];
+      for(const [nx,nz] of neighbors){
+        if(nx<0||nz<0||nx>=navGrid.width||nz>=navGrid.height) continue;
+        const h2 = navGrid.cells[nz][nx].height;
+        const slope = Math.abs(h2 - h) / navGrid.cellSize;
+        if(slope > config.maxSlope){
+          navGrid.cells[gz][gx].walkable = false;
+          break;
+        }
+      }
     }
   }
   pos.needsUpdate = true;
@@ -388,11 +427,10 @@ function generateNPCs(comp){
       for(let i=0;i<n;i++){
         const npc = createNPC(team, type, colors[team]);
         const row = Math.floor(i/5), col = i%5;
-        npc.mesh.position.set(
-          sideX[team] + (rand()-0.5)*6,
-          1.1,
-          (row*2.0 - 8) + col*1.6 + (rand()-0.5)*1.5
-        );
+        const x = sideX[team] + (rand()-0.5)*6;
+        const z = (row*2.0 - 8) + col*1.6 + (rand()-0.5)*1.5;
+        const y = getTerrainHeight(x, z) + npc.modelHeight;
+        npc.mesh.position.set(x, y, z);
         scene.add(npc.mesh);
         npcs.push(npc);
       }
@@ -421,6 +459,7 @@ function createNPC(team, type, color){
     mesh: group,
     healthBar: bar,
     healthBarGroup: barGroup,
+    modelHeight: 1.1,
     target: null,
     status: 'vivo',
     cooldown: 0,
@@ -492,18 +531,36 @@ function moveTowards(npc, dt){
   if(npc.path && npc.pathIndex < npc.path.length){
     const targetPos = npc.path[npc.pathIndex];
     const dir = new THREE.Vector3().subVectors(targetPos, npc.mesh.position);
+    dir.y = 0;
     const dist = dir.length();
     if(dist < 0.5){
       npc.pathIndex++;
     } else {
       dir.normalize();
       const step = npc.attributes.velocidad * dt;
-      npc.mesh.position.addScaledVector(dir, Math.min(step, dist));
+      const move = Math.min(step, dist);
+      const candidate = npc.mesh.position.clone().addScaledVector(dir, move);
+      const h1 = getTerrainHeight(npc.mesh.position.x, npc.mesh.position.z);
+      const h2 = getTerrainHeight(candidate.x, candidate.z);
+      const horiz = Math.hypot(candidate.x - npc.mesh.position.x, candidate.z - npc.mesh.position.z);
+      const slope = horiz > 0 ? Math.abs(h2 - h1) / horiz : 0;
+      if(slope <= config.maxSlope){
+        npc.mesh.position.copy(candidate);
+      }
     }
   } else if(npc.target){
-    const dir = new THREE.Vector3().subVectors(npc.target.mesh.position, npc.mesh.position).normalize();
+    const dir = new THREE.Vector3().subVectors(npc.target.mesh.position, npc.mesh.position);
+    dir.y = 0;
+    dir.normalize();
     const step = npc.attributes.velocidad * dt;
-    npc.mesh.position.addScaledVector(dir, step);
+    const candidate = npc.mesh.position.clone().addScaledVector(dir, step);
+    const h1 = getTerrainHeight(npc.mesh.position.x, npc.mesh.position.z);
+    const h2 = getTerrainHeight(candidate.x, candidate.z);
+    const horiz = Math.hypot(candidate.x - npc.mesh.position.x, candidate.z - npc.mesh.position.z);
+    const slope = horiz > 0 ? Math.abs(h2 - h1) / horiz : 0;
+    if(slope <= config.maxSlope){
+      npc.mesh.position.copy(candidate);
+    }
   }
 
   // evitar obstáculos aproximando círculos
@@ -517,10 +574,9 @@ function moveTowards(npc, dt){
   }
 
   // límites
-  npc.mesh.position.clamp(
-    new THREE.Vector3(-config.terrainSize/2, 1.1, -config.terrainSize/2),
-    new THREE.Vector3( config.terrainSize/2, 1.1,  config.terrainSize/2)
-  );
+  npc.mesh.position.x = THREE.MathUtils.clamp(npc.mesh.position.x, -config.terrainSize/2, config.terrainSize/2);
+  npc.mesh.position.z = THREE.MathUtils.clamp(npc.mesh.position.z, -config.terrainSize/2, config.terrainSize/2);
+  npc.mesh.position.y = getTerrainHeight(npc.mesh.position.x, npc.mesh.position.z) + npc.modelHeight;
 }
 
 function lineOfSight(a, b){
