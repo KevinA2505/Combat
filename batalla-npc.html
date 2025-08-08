@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Simulador de Batalla 3D</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #stats {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #armySelection {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border: 1px solid black;
+            z-index: 10;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div id="armySelection">
+        <h2>Selecciona tus ejércitos y terreno</h2>
+        <h3>Terreno</h3>
+        <label>Ancho: <input type="number" id="terrainWidth" min="50" max="200" value="100"></label><br>
+        <label>Alto: <input type="number" id="terrainHeight" min="50" max="200" value="100"></label><br>
+        <h3>Equipo A</h3>
+        <label>Guerreros: <input type="number" id="teamAWarriors" min="0" max="50" value="5"></label><br>
+        <label>Arqueros: <input type="number" id="teamAArchers" min="0" max="50" value="3"></label><br>
+        <label>Magos: <input type="number" id="teamAMages" min="0" max="50" value="2"></label><br>
+        <h3>Equipo B</h3>
+        <label>Guerreros: <input type="number" id="teamBWarriors" min="0" max="50" value="5"></label><br>
+        <label>Arqueros: <input type="number" id="teamBArchers" min="0" max="50" value="3"></label><br>
+        <label>Magos: <input type="number" id="teamBMages" min="0" max="50" value="2"></label><br>
+        <button id="startBattleBtn">Iniciar Batalla</button>
+    </div>
+    <div id="controls" class="hidden">
+        <button id="pauseBtn">Pausar</button>
+        <button id="resumeBtn" style="display:none;">Reanudar</button>
+        <button id="restartBtn">Reiniciar</button>
+    </div>
+    <div id="stats" class="hidden">
+        <h3>Estadísticas</h3>
+        <p id="teamAStatus">Equipo A: 0 vivos</p>
+        <p id="teamBStatus">Equipo B: 0 vivos</p>
+        <p id="battleStatus">Batalla en curso</p>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        // Configuración inicial
+        const config = {
+            obstacleDensity: 0.05, // Densidad de obstáculos
+            npcTypes: ['guerrero', 'arquero', 'mago'],
+            attributes: {
+                guerrero: { vida: 100, ataque: 20, velocidad: 0.09, defensa: 10, rango: 2 }, // 0.1 * 0.9
+                arquero:  { vida: 80,  ataque: 15, velocidad: 0.135, defensa: 5, rango: 5 }, // 0.15 * 0.9
+                mago:     { vida: 60,  ataque: 30, velocidad: 0.09, defensa: 0, rango: 3 }  // 0.1 * 0.9
+            },
+            fleeThreshold: 0.2 // 20% de vida para huir
+        };
+
+        // Variables globales
+        let scene, camera, renderer, controls;
+        let terrain, npcs = [], obstacles = [], grid;
+        let paused = false;
+        let battleStartTime;
+        let teamAComposition, teamBComposition;
+
+        // Inicialización
+        function init() {
+            // Escena y renderizado
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Controles de cámara
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            camera.position.set(0, 50, 50);
+            controls.update();
+
+            // Eventos de UI
+            document.getElementById('startBattleBtn').addEventListener('click', startBattle);
+            document.getElementById('pauseBtn').addEventListener('click', () => {
+                paused = true;
+                document.getElementById('pauseBtn').style.display = 'none';
+                document.getElementById('resumeBtn').style.display = 'inline';
+            });
+            document.getElementById('resumeBtn').addEventListener('click', () => {
+                paused = false;
+                document.getElementById('pauseBtn').style.display = 'inline';
+                document.getElementById('resumeBtn').style.display = 'none';
+            });
+            document.getElementById('restartBtn').addEventListener('click', showArmySelection);
+        }
+
+        // Mostrar selección de ejércitos y terreno
+        function showArmySelection() {
+            document.getElementById('armySelection').classList.remove('hidden');
+            document.getElementById('controls').classList.add('hidden');
+            document.getElementById('stats').classList.add('hidden');
+            while (scene.children.length > 0) {
+                scene.remove(scene.children[0]);
+            }
+            obstacles = [];
+            npcs = [];
+        }
+
+        // Iniciar batalla
+        function startBattle() {
+            // Obtener tamaño del terreno
+            const terrainWidth = parseInt(document.getElementById('terrainWidth').value);
+            const terrainHeight = parseInt(document.getElementById('terrainHeight').value);
+            config.terrainWidth = terrainWidth;
+            config.terrainHeight = terrainHeight;
+            config.teamABase = new THREE.Vector3(-terrainWidth / 2 + 5, 0, 0);
+            config.teamBBase = new THREE.Vector3(terrainWidth / 2 - 5, 0, 0);
+
+            // Obtener composición de ejércitos
+            teamAComposition = {
+                guerrero: parseInt(document.getElementById('teamAWarriors').value),
+                arquero: parseInt(document.getElementById('teamAArchers').value),
+                mago: parseInt(document.getElementById('teamAMages').value)
+            };
+            teamBComposition = {
+                guerrero: parseInt(document.getElementById('teamBWarriors').value),
+                arquero: parseInt(document.getElementById('teamBArchers').value),
+                mago: parseInt(document.getElementById('teamBMages').value)
+            };
+
+            // Validar que haya al menos un NPC en cada equipo
+            const teamATotal = teamAComposition.guerrero + teamAComposition.arquero + teamAComposition.mago;
+            const teamBTotal = teamBComposition.guerrero + teamBComposition.arquero + teamBComposition.mago;
+            if (teamATotal < 1 || teamBTotal < 1) {
+                alert('Cada equipo debe tener al menos un NPC.');
+                return;
+            }
+
+            // Ocultar selección y mostrar controles y estadísticas
+            document.getElementById('armySelection').classList.add('hidden');
+            document.getElementById('controls').classList.remove('hidden');
+            document.getElementById('stats').classList.remove('hidden');
+
+            // Generar entorno
+            generateTerrain();
+            generateObstacles();
+            generateGrid();
+            generateNPCs();
+
+            // Iniciar batalla
+            battleStartTime = Date.now();
+            paused = false;
+            document.getElementById('pauseBtn').style.display = 'inline';
+            document.getElementById('resumeBtn').style.display = 'none';
+            document.getElementById('battleStatus').textContent = 'Batalla en curso';
+
+            animate();
+        }
+
+        // Generar terreno con Perlin Noise
+        function generateTerrain() {
+            const geometry = new THREE.PlaneGeometry(config.terrainWidth, config.terrainHeight, 32, 32);
+            const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
+            terrain = new THREE.Mesh(geometry, material);
+            terrain.rotation.x = -Math.PI / 2; // Rotar para que sea horizontal
+            scene.add(terrain);
+
+            // Aplicar elevaciones
+            const vertices = terrain.geometry.attributes.position.array;
+            for (let i = 2; i < vertices.length; i += 3) {
+                vertices[i] = perlinNoise(vertices[i - 2] / 10, vertices[i - 1] / 10) * 5;
+            }
+            terrain.geometry.attributes.position.needsUpdate = true;
+            terrain.geometry.computeVertexNormals();
+        }
+
+        // Implementación simple de Perlin Noise
+        function perlinNoise(x, y) {
+            const n = x + y * 57;
+            const nn = (n << 13) ^ n;
+            return (1.0 - ((nn * (nn * nn * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0) / 2;
+        }
+
+        // Generar obstáculos (árboles y rocas)
+        function generateObstacles() {
+            const numObstacles = Math.floor(config.terrainWidth * config.terrainHeight * config.obstacleDensity);
+            for (let i = 0; i < numObstacles; i++) {
+                const isTree = Math.random() > 0.5;
+                const geometry = isTree ? new THREE.CylinderGeometry(0.5, 0.5, 5, 8) : new THREE.BoxGeometry(2, 2, 2);
+                const material = new THREE.MeshBasicMaterial({ color: isTree ? 0x8B4513 : 0x808080 });
+                const obstacle = new THREE.Mesh(geometry, material);
+                obstacle.position.set(
+                    (Math.random() - 0.5) * config.terrainWidth,
+                    isTree ? 2.5 : 1,
+                    (Math.random() - 0.5) * config.terrainHeight
+                );
+                scene.add(obstacle);
+                obstacles.push(obstacle);
+            }
+        }
+
+        // Generar grid para pathfinding
+        function generateGrid() {
+            const gridWidth = Math.ceil(config.terrainWidth);
+            const gridHeight = Math.ceil(config.terrainHeight);
+            grid = Array.from({ length: gridWidth }, () => Array(gridHeight).fill(true));
+
+            obstacles.forEach(obstacle => {
+                const i = Math.floor(obstacle.position.x + config.terrainWidth / 2);
+                const j = Math.floor(obstacle.position.z + config.terrainHeight / 2);
+                if (i >= 0 && i < gridWidth && j >= 0 && j < gridHeight) {
+                    grid[i][j] = false;
+                }
+            });
+        }
+
+        // Generar NPCs según la composición seleccionada
+        function generateNPCs() {
+            npcs = [];
+            const teams = ['A', 'B'];
+            const compositions = [teamAComposition, teamBComposition];
+            teams.forEach((team, index) => {
+                const composition = compositions[index];
+                for (const type in composition) {
+                    for (let i = 0; i < composition[type]; i++) {
+                        const npc = {
+                            team,
+                            type,
+                            attributes: { ...config.attributes[type], vidaMax: config.attributes[type].vida },
+                            mesh: createNPCMesh(team, type),
+                            path: [],
+                            currentWaypointIndex: 0,
+                            lastPathTime: 0,
+                            currentTarget: null,
+                            status: 'vivo'
+                        };
+                        npc.mesh.position.set(
+                            team === 'A' ? -config.terrainWidth / 4 : config.terrainWidth / 4,
+                            1,
+                            (Math.random() - 0.5) * config.terrainHeight
+                        );
+                        scene.add(npc.mesh);
+                        npcs.push(npc);
+                    }
+                }
+            });
+        }
+
+        // Crear malla para NPC con barra de vida
+        function createNPCMesh(team, type) {
+            const group = new THREE.Group();
+            const geometry = new THREE.SphereGeometry(1, 16, 16);
+            const material = new THREE.MeshBasicMaterial({ color: team === 'A' ? 0xff0000 : 0x0000ff });
+            const sphere = new THREE.Mesh(geometry, material);
+            group.add(sphere);
+
+            // Barra de vida
+            const healthBar = new THREE.Mesh(
+                new THREE.BoxGeometry(2, 0.2, 0.2),
+                new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+            );
+            healthBar.position.set(0, 1.5, 0);
+            group.add(healthBar);
+            group.healthBar = healthBar;
+
+            return group;
+        }
+
+        // Bucle de animación
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!paused) {
+                updateNPCs();
+                checkBattleStatus();
+            }
+            renderer.render(scene, camera);
+            controls.update();
+        }
+
+        // Actualizar NPCs
+        function updateNPCs() {
+            npcs.forEach(npc => {
+                if (npc.status === 'vivo') {
+                    const healthRatio = npc.attributes.vida / npc.attributes.vidaMax;
+                    let attackTarget = findNearestEnemy(npc);
+                    let movementTarget;
+
+                    if (healthRatio > config.fleeThreshold) {
+                        movementTarget = attackTarget.mesh.position;
+                    } else {
+                        movementTarget = npc.team === 'A' ? config.teamABase : config.teamBBase;
+                    }
+
+                    // Recalcular camino cada segundo o si el objetivo cambia
+                    if (Date.now() - npc.lastPathTime > 1000 || npc.currentTarget !== attackTarget) {
+                        npc.currentTarget = attackTarget;
+                        npc.lastPathTime = Date.now();
+                        const startGrid = worldToGrid(npc.mesh.position);
+                        const goalGrid = worldToGrid(movementTarget);
+                        const pathGrid = aStar(startGrid, goalGrid, grid);
+                        if (pathGrid) {
+                            npc.path = pathGrid.map(p => gridToWorld(p));
+                            npc.currentWaypointIndex = 0;
+                        } else {
+                            npc.path = [];
+                        }
+                    }
+
+                    // Moverse a lo largo del camino
+                    if (npc.path.length > 0 && npc.currentWaypointIndex < npc.path.length) {
+                        const waypoint = npc.path[npc.currentWaypointIndex];
+                        const direction = new THREE.Vector3().subVectors(waypoint, npc.mesh.position).normalize();
+                        const speed = npc.attributes.velocidad;
+                        npc.mesh.position.add(direction.multiplyScalar(speed));
+
+                        // Verificar si está cerca del waypoint
+                        if (npc.mesh.position.distanceTo(waypoint) < 0.5) {
+                            npc.currentWaypointIndex++;
+                        }
+                    }
+
+                    // Atacar si está en rango
+                    if (attackTarget && isInRange(npc, attackTarget)) {
+                        attack(npc, attackTarget);
+                    }
+
+                    updateHealthBar(npc);
+                }
+            });
+        }
+
+        // Encontrar enemigo más cercano
+        function findNearestEnemy(npc) {
+            let nearest = null;
+            let minDist = Infinity;
+            npcs.forEach(enemy => {
+                if (enemy.team !== npc.team && enemy.status === 'vivo') {
+                    const dist = npc.mesh.position.distanceTo(enemy.mesh.position);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearest = enemy;
+                    }
+                }
+            });
+            return nearest;
+        }
+
+        // Convertir posición del mundo a grid
+        function worldToGrid(pos) {
+            const x = Math.floor(pos.x + config.terrainWidth / 2);
+            const z = Math.floor(pos.z + config.terrainHeight / 2);
+            return { x, z };
+        }
+
+        // Convertir posición de grid a mundo
+        function gridToWorld(gridPos) {
+            return new THREE.Vector3(
+                gridPos.x - config.terrainWidth / 2 + 0.5,
+                0,
+                gridPos.z - config.terrainHeight / 2 + 0.5
+            );
+        }
+
+        // Implementación de A*
+        function aStar(start, goal, grid) {
+            if (!isPassable(start, grid) || !isPassable(goal, grid)) return null;
+            const openSet = [start];
+            const cameFrom = {};
+            const gScore = {};
+            gScore[`${start.x},${start.z}`] = 0;
+            const fScore = {};
+            fScore[`${start.x},${start.z}`] = heuristic(start, goal);
+
+            while (openSet.length > 0) {
+                let current = openSet.reduce((minNode, node) => fScore[`${node.x},${node.z}`] < fScore[`${minNode.x},${minNode.z}`] ? node : minNode);
+                if (current.x === goal.x && current.z === goal.z) {
+                    return reconstructPath(cameFrom, current);
+                }
+                openSet.splice(openSet.indexOf(current), 1);
+                const neighbors = getNeighbors(current, grid);
+                for (let neighbor of neighbors) {
+                    const tentative_gScore = gScore[`${current.x},${current.z}`] + 1;
+                    const neighborKey = `${neighbor.x},${neighbor.z}`;
+                    if (!(neighborKey in gScore) || tentative_gScore < gScore[neighborKey]) {
+                        cameFrom[neighborKey] = current;
+                        gScore[neighborKey] = tentative_gScore;
+                        fScore[neighborKey] = gScore[neighborKey] + heuristic(neighbor, goal);
+                        if (!openSet.some(n => n.x === neighbor.x && n.z === neighbor.z)) {
+                            openSet.push(neighbor);
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        function heuristic(a, b) {
+            return Math.abs(a.x - b.x) + Math.abs(a.z - b.z); // Manhattan distance
+        }
+
+        function isPassable(pos, grid) {
+            return pos.x >= 0 && pos.x < grid.length && pos.z >= 0 && pos.z < grid[0].length && grid[pos.x][pos.z];
+        }
+
+        function getNeighbors(pos, grid) {
+            const neighbors = [];
+            const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+            for (let [dx, dz] of dirs) {
+                const nx = pos.x + dx;
+                const nz = pos.z + dz;
+                if (nx >= 0 && nx < grid.length && nz >= 0 && nz < grid[0].length && grid[nx][nz]) {
+                    neighbors.push({ x: nx, z: nz });
+                }
+            }
+            return neighbors;
+        }
+
+        function reconstructPath(cameFrom, current) {
+            const path = [current];
+            while (`${current.x},${current.z}` in cameFrom) {
+                current = cameFrom[`${current.x},${current.z}`];
+                path.unshift(current);
+            }
+            return path;
+        }
+
+        // Verificar si está en rango de ataque
+        function isInRange(npc, target) {
+            return npc.mesh.position.distanceTo(target.mesh.position) <= npc.attributes.rango;
+        }
+
+        // Realizar ataque
+        function attack(npc, target) {
+            const damage = Math.max(0, npc.attributes.ataque - target.attributes.defensa);
+            target.attributes.vida -= damage;
+            if (target.attributes.vida <= 0) {
+                target.status = 'muerto';
+                scene.remove(target.mesh);
+            }
+        }
+
+        // Actualizar barra de vida
+        function updateHealthBar(npc) {
+            const healthRatio = npc.attributes.vida / npc.attributes.vidaMax;
+            npc.mesh.healthBar.scale.x = healthRatio;
+            npc.mesh.healthBar.position.x = (1 - healthRatio) / 2; // Centrar la barra
+            npc.mesh.healthBar.material.color.setHSL(healthRatio * 0.3, 1, 0.5); // Verde a rojo
+        }
+
+        // Verificar estado de la batalla
+        function checkBattleStatus() {
+            const teamAAlive = npcs.filter(npc => npc.team === 'A' && npc.status === 'vivo').length;
+            const teamBAlive = npcs.filter(npc => npc.team === 'B' && npc.status === 'vivo').length;
+            document.getElementById('teamAStatus').textContent = `Equipo A: ${teamAAlive} vivos`;
+            document.getElementById('teamBStatus').textContent = `Equipo B: ${teamBAlive} vivos`;
+
+            if (teamAAlive === 0 || teamBAlive === 0) {
+                const winner = teamAAlive > 0 ? 'Equipo A' : 'Equipo B';
+                const duration = ((Date.now() - battleStartTime) / 1000).toFixed(2);
+                document.getElementById('battleStatus').textContent = `Ganador: ${winner}. Duración: ${duration}s`;
+                paused = true;
+            }
+        }
+
+        // Iniciar
+        init();
+        showArmySelection();
+    </script>
+</body>
+</html>
