@@ -1,489 +1,567 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Simulador de Batalla 3D</title>
-    <style>
-        body { margin: 0; }
-        canvas { display: block; }
-        #controls {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(255, 255, 255, 0.8);
-            padding: 10px;
-            border-radius: 5px;
-        }
-        #stats {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(255, 255, 255, 0.8);
-            padding: 10px;
-            border-radius: 5px;
-        }
-        #armySelection {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: white;
-            padding: 20px;
-            border: 1px solid black;
-            z-index: 10;
-        }
-        .hidden { display: none; }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Simulador de Batalla 3D — versión mejorada</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    canvas { display: block; }
+    #hud { position: absolute; inset: 0; pointer-events: none; }
+    .panel { pointer-events: auto; background: rgba(255,255,255,0.88); backdrop-filter: blur(4px); border-radius: 10px; padding: 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
+    #controls { position: absolute; top: 12px; left: 12px; display: grid; gap: 8px; min-width: 280px; }
+    #stats { position: absolute; top: 12px; right: 12px; min-width: 240px; }
+    #armySelection { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(92vw, 520px); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; }
+    .subgrid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+    label { font-size: 14px; display: flex; justify-content: space-between; gap: 8px; }
+    input[type=number] { width: 74px; }
+    input[type=range] { width: 100%; }
+    button { padding: 8px 10px; border-radius: 8px; border: 1px solid #ccc; background: #111; color: #fff; font-weight: 600; cursor: pointer; }
+    button.secondary { background: #fff; color: #111; }
+    .hidden { display: none; }
+    .muted { color: #444; font-size: 12px; }
+  </style>
 </head>
 <body>
-    <div id="armySelection">
-        <h2>Selecciona tus ejércitos y terreno</h2>
-        <h3>Terreno</h3>
-        <label>Ancho: <input type="number" id="terrainWidth" min="50" max="200" value="100"></label><br>
-        <label>Alto: <input type="number" id="terrainHeight" min="50" max="200" value="100"></label><br>
-        <h3>Equipo A</h3>
-        <label>Guerreros: <input type="number" id="teamAWarriors" min="0" max="50" value="5"></label><br>
-        <label>Arqueros: <input type="number" id="teamAArchers" min="0" max="50" value="3"></label><br>
-        <label>Magos: <input type="number" id="teamAMages" min="0" max="50" value="2"></label><br>
-        <h3>Equipo B</h3>
-        <label>Guerreros: <input type="number" id="teamBWarriors" min="0" max="50" value="5"></label><br>
-        <label>Arqueros: <input type="number" id="teamBArchers" min="0" max="50" value="3"></label><br>
-        <label>Magos: <input type="number" id="teamBMages" min="0" max="50" value="2"></label><br>
-        <button id="startBattleBtn">Iniciar Batalla</button>
+  <div id="hud">
+    <div id="armySelection" class="panel">
+      <h2 style="margin-top:0">Configuración de batalla</h2>
+      <div class="row">
+        <div>
+          <h3>Equipo A</h3>
+          <div class="subgrid">
+            <label>Guerreros <input type="number" id="teamAWarriors" min="0" max="50" value="5"></label>
+            <label>Arqueros <input type="number" id="teamAArchers" min="0" max="50" value="3"></label>
+            <label>Magos <input type="number" id="teamAMages" min="0" max="50" value="2"></label>
+          </div>
+        </div>
+        <div>
+          <h3>Equipo B</h3>
+          <div class="subgrid">
+            <label>Guerreros <input type="number" id="teamBWarriors" min="0" max="50" value="5"></label>
+            <label>Arqueros <input type="number" id="teamBArchers" min="0" max="50" value="3"></label>
+            <label>Magos <input type="number" id="teamBMages" min="0" max="50" value="2"></label>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:8px" class="row">
+        <label>Semilla procedural <input type="number" id="seedInput" min="0" max="999999" value="42"></label>
+        <label>Velocidad sim. <input type="range" id="speedSlider" min="0.25" max="2" step="0.25" value="1"></label>
+      </div>
+      <p class="muted">Modo: <strong>Tiempo real</strong>. (Puedo añadir <em>por turnos</em> si lo necesita.)</p>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button id="startBattleBtn">Iniciar batalla</button>
+        <button id="quickSkirmishBtn" class="secondary">Escaramuza rápida (5v5)</button>
+      </div>
     </div>
-    <div id="controls" class="hidden">
+
+    <div id="controls" class="panel hidden">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
         <button id="pauseBtn">Pausar</button>
-        <button id="resumeBtn" style="display:none;">Reanudar</button>
-        <button id="restartBtn">Reiniciar</button>
+        <button id="resumeBtn" class="hidden">Reanudar</button>
+        <button id="restartBtn" class="secondary">Reiniciar</button>
+        <button id="resetCamBtn" class="secondary">Recentrar cámara</button>
+        <label style="margin-left:8px; display:flex; align-items:center; gap:6px;">Velocidad <input type="range" id="runtimeSpeed" min="0.25" max="3" step="0.25" value="1"></label>
+      </div>
+      <div class="muted" style="margin-top:6px;">Terreno 100×100, obstáculos procedurales, IA con búsqueda de objetivo más cercano, línea de visión, enfriamientos y proyectiles.</div>
     </div>
-    <div id="stats" class="hidden">
-        <h3>Estadísticas</h3>
-        <p id="teamAStatus">Equipo A: 0 vivos</p>
-        <p id="teamBStatus">Equipo B: 0 vivos</p>
-        <p id="battleStatus">Batalla en curso</p>
+
+    <div id="stats" class="panel hidden">
+      <h3 style="margin:0 0 6px 0">Estadísticas</h3>
+      <div id="teamAStatus">Equipo A: 0 vivos</div>
+      <div id="teamBStatus">Equipo B: 0 vivos</div>
+      <div id="battleStatus">Batalla en curso…</div>
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <script>
-        // Configuración inicial
-        const config = {
-            obstacleDensity: 0.05, // Densidad de obstáculos
-            npcTypes: ['guerrero', 'arquero', 'mago'],
-            attributes: {
-                guerrero: { vida: 100, ataque: 20, velocidad: 0.09, defensa: 10, rango: 2 }, // 0.1 * 0.9
-                arquero:  { vida: 80,  ataque: 15, velocidad: 0.135, defensa: 5, rango: 5 }, // 0.15 * 0.9
-                mago:     { vida: 60,  ataque: 30, velocidad: 0.09, defensa: 0, rango: 3 }  // 0.1 * 0.9
-            },
-            fleeThreshold: 0.2 // 20% de vida para huir
-        };
+  </div>
 
-        // Variables globales
-        let scene, camera, renderer, controls;
-        let terrain, npcs = [], obstacles = [], grid;
-        let paused = false;
-        let battleStartTime;
-        let teamAComposition, teamBComposition;
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script>
+    // ========================
+    // Configuración y constantes
+    // ========================
+    const config = {
+      terrainSize: 100,
+      obstacleDensity: 0.05,
+      npcTypes: ['guerrero', 'arquero', 'mago'],
+      attributes: {
+        guerrero: { vida: 100, ataque: 20, velocidad: 3.0, defensa: 10, rango: 2.2, cadencia: 0.7 }, // unidades/seg
+        arquero:  { vida:  80, ataque: 14, velocidad: 3.4, defensa:  5, rango: 9.0, cadencia: 1.2 },
+        mago:     { vida:  60, ataque: 26, velocidad: 2.8, defensa:  0, rango: 7.0, cadencia: 1.6 }
+      },
+      projectile: {
+        speed: 16, // unidades/seg
+        radius: 0.18
+      }
+    };
 
-        // Inicialización
-        function init() {
-            // Escena y renderizado
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            renderer = new THREE.WebGLRenderer();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
+    // ========================
+    // Variables globales
+    // ========================
+    let scene, camera, renderer, controls, clock;
+    let terrain, npcs = [], obstacles = [], projectiles = [];
+    let ui = {}, paused = false, battleStartTime = 0, timeScale = 1, isRunning = false;
+    let rngSeed = 42;
 
-            // Controles de cámara
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            camera.position.set(0, 50, 50);
-            controls.update();
+    // RNG determinista sencillo
+    function mulberry32(a) {
+      return function() {
+        a |= 0; a = a + 0x6D2B79F5 | 0;
+        let t = Math.imul(a ^ a >>> 15, 1 | a);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      }
+    }
+    let rand = mulberry32(rngSeed);
 
-            // Eventos de UI
-            document.getElementById('startBattleBtn').addEventListener('click', startBattle);
-            document.getElementById('pauseBtn').addEventListener('click', () => {
-                paused = true;
-                document.getElementById('pauseBtn').style.display = 'none';
-                document.getElementById('resumeBtn').style.display = 'inline';
-            });
-            document.getElementById('resumeBtn').addEventListener('click', () => {
-                paused = false;
-                document.getElementById('pauseBtn').style.display = 'inline';
-                document.getElementById('resumeBtn').style.display = 'none';
-            });
-            document.getElementById('restartBtn').addEventListener('click', showArmySelection);
+    // ========================
+    // Inicialización
+    // ========================
+    function init() {
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x8095a5, 0.015);
+
+      camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1200);
+      camera.position.set(0, 62, 68);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true; controls.dampingFactor = 0.08;
+      controls.target.set(0, 0, 0);
+
+      clock = new THREE.Clock();
+
+      // Luces básicas
+      const amb = new THREE.AmbientLight(0xffffff, 0.55); scene.add(amb);
+      const dir = new THREE.DirectionalLight(0xffffff, 0.75); dir.position.set(40, 80, 30); scene.add(dir);
+
+      // Helper de límites
+      const grid = new THREE.GridHelper(config.terrainSize, 20, 0x333333, 0x999999);
+      grid.position.y = 0.02; scene.add(grid);
+      const box = new THREE.Box3Helper(new THREE.Box3(
+        new THREE.Vector3(-config.terrainSize/2, 0, -config.terrainSize/2),
+        new THREE.Vector3( config.terrainSize/2, 0,  config.terrainSize/2)
+      ), 0x333333); scene.add(box);
+
+      // UI refs
+      ui.start = document.getElementById('startBattleBtn');
+      ui.quick = document.getElementById('quickSkirmishBtn');
+      ui.pause = document.getElementById('pauseBtn');
+      ui.resume = document.getElementById('resumeBtn');
+      ui.restart = document.getElementById('restartBtn');
+      ui.resetCam = document.getElementById('resetCamBtn');
+      ui.runtimeSpeed = document.getElementById('runtimeSpeed');
+      ui.seed = document.getElementById('seedInput');
+      ui.speedSlider = document.getElementById('speedSlider');
+      ui.armySelection = document.getElementById('armySelection');
+      ui.controls = document.getElementById('controls');
+      ui.stats = document.getElementById('stats');
+      ui.teamAStatus = document.getElementById('teamAStatus');
+      ui.teamBStatus = document.getElementById('teamBStatus');
+      ui.battleStatus = document.getElementById('battleStatus');
+
+      // Eventos UI
+      ui.start.addEventListener('click', () => startBattle(readComposition()));
+      ui.quick.addEventListener('click', () => {
+        document.getElementById('teamAWarriors').value = 5;
+        document.getElementById('teamAArchers').value = 3;
+        document.getElementById('teamAMages').value = 2;
+        document.getElementById('teamBWarriors').value = 5;
+        document.getElementById('teamBArchers').value = 3;
+        document.getElementById('teamBMages').value = 2;
+        startBattle(readComposition());
+      });
+      ui.pause.addEventListener('click', () => { paused = true; ui.pause.classList.add('hidden'); ui.resume.classList.remove('hidden'); });
+      ui.resume.addEventListener('click', () => { paused = false; ui.resume.classList.add('hidden'); ui.pause.classList.remove('hidden'); });
+      ui.restart.addEventListener('click', resetToMenu);
+      ui.resetCam.addEventListener('click', () => { camera.position.set(0, 62, 68); controls.target.set(0,0,0); });
+      ui.runtimeSpeed.addEventListener('input', e => timeScale = parseFloat(e.target.value));
+      ui.speedSlider.addEventListener('input', e => timeScale = parseFloat(e.target.value));
+      ui.seed.addEventListener('change', e => { rngSeed = parseInt(e.target.value||'42', 10); rand = mulberry32(rngSeed); });
+
+      window.addEventListener('resize', onResize);
+
+      // Mostrar menú de ejércitos
+      showMenu();
+
+      // Render loop único
+      animate();
+    }
+
+    function onResize(){
+      camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function showMenu(){
+      ui.armySelection.classList.remove('hidden');
+      ui.controls.classList.add('hidden');
+      ui.stats.classList.add('hidden');
+      isRunning = false; paused = false;
+      ui.pause.classList.remove('hidden'); ui.resume.classList.add('hidden');
+      // Limpiar escena salvo helpers y luces
+      clearBattleEntities();
+    }
+
+    function readComposition(){
+      return {
+        A: {
+          guerrero: parseInt(document.getElementById('teamAWarriors').value||'0',10),
+          arquero:  parseInt(document.getElementById('teamAArchers').value||'0',10),
+          mago:     parseInt(document.getElementById('teamAMages').value||'0',10)
+        },
+        B: {
+          guerrero: parseInt(document.getElementById('teamBWarriors').value||'0',10),
+          arquero:  parseInt(document.getElementById('teamBArchers').value||'0',10),
+          mago:     parseInt(document.getElementById('teamBMages').value||'0',10)
         }
+      };
+    }
 
-        // Mostrar selección de ejércitos y terreno
-        function showArmySelection() {
-            document.getElementById('armySelection').classList.remove('hidden');
-            document.getElementById('controls').classList.add('hidden');
-            document.getElementById('stats').classList.add('hidden');
-            while (scene.children.length > 0) {
-                scene.remove(scene.children[0]);
-            }
-            obstacles = [];
-            npcs = [];
+    function validateComp(comp){
+      const totalA = comp.A.guerrero + comp.A.arquero + comp.A.mago;
+      const totalB = comp.B.guerrero + comp.B.arquero + comp.B.mago;
+      return totalA >= 1 && totalB >= 1;
+    }
+
+    function startBattle(composition){
+      if(!validateComp(composition)) { alert('Cada equipo debe tener al menos un NPC.'); return; }
+      clearBattleEntities(true);
+      rngSeed = parseInt(ui.seed.value||'42', 10); rand = mulberry32(rngSeed);
+
+      ui.armySelection.classList.add('hidden');
+      ui.controls.classList.remove('hidden');
+      ui.stats.classList.remove('hidden');
+
+      generateTerrain();
+      generateObstacles();
+      generateNPCs(composition);
+
+      battleStartTime = performance.now();
+      paused = false; isRunning = true; ui.battleStatus.textContent = 'Batalla en curso…';
+    }
+
+    // ========================
+    // Generación procedural
+    // ========================
+    function generateTerrain(){
+      if(terrain) { scene.remove(terrain); disposeMesh(terrain); terrain = null; }
+      const geom = new THREE.PlaneGeometry(config.terrainSize, config.terrainSize, 64, 64);
+      // Elevación simple (value noise / hash noise suavizado)
+      const pos = geom.attributes.position;
+      for(let i=0; i<pos.count; i++){
+        const x = pos.getX(i) * 0.08; // escala
+        const y = pos.getY(i) * 0.08;
+        const h = fbmNoise(x, y) * 4.0; // altura máx ±4
+        pos.setZ(i, h);
+      }
+      pos.needsUpdate = true;
+      geom.computeVertexNormals();
+      const mat = new THREE.MeshStandardMaterial({ color: 0x6fae6f, roughness: 1.0, metalness: 0.0, flatShading: false });
+      terrain = new THREE.Mesh(geom, mat);
+      terrain.rotation.x = -Math.PI/2;
+      terrain.receiveShadow = false;
+      scene.add(terrain);
+    }
+
+    // Fractal Brownian Motion sobre un hash noise determinista
+    function baseNoise(x, y){
+      // Hash 2D determinista con semilla
+      const n = Math.sin((x*127.1 + y*311.7 + rngSeed) * 43758.5453);
+      return (n - Math.floor(n)); // [0,1)
+    }
+    function smoothNoise(x, y){
+      const x0 = Math.floor(x), y0 = Math.floor(y);
+      const xf = x - x0, yf = y - y0;
+      function lerp(a,b,t){ return a + (b-a)*t; }
+      const n00 = baseNoise(x0,   y0);
+      const n10 = baseNoise(x0+1, y0);
+      const n01 = baseNoise(x0,   y0+1);
+      const n11 = baseNoise(x0+1, y0+1);
+      const nx0 = lerp(n00, n10, xf);
+      const nx1 = lerp(n01, n11, xf);
+      return lerp(nx0, nx1, yf) * 2 - 1; // [-1,1]
+    }
+    function fbmNoise(x, y){
+      let f = 0, amp = 1, freq = 1;
+      for(let o=0; o<4; o++){ f += amp * smoothNoise(x*freq, y*freq); amp *= 0.5; freq *= 2.0; }
+      return f;
+    }
+
+    function generateObstacles(){
+      const count = Math.floor(config.terrainSize * config.terrainSize * config.obstacleDensity);
+      for(let i=0; i<count; i++){
+        const isTree = rand() > 0.5;
+        let geom, mat, h;
+        if(isTree){
+          geom = new THREE.CylinderGeometry(0.4, 0.6, 4.8, 8);
+          mat = new THREE.MeshStandardMaterial({ color: 0x8B5A2B, roughness: 1 });
+          h = 2.4;
+        } else {
+          geom = new THREE.DodecahedronGeometry(1.2);
+          mat = new THREE.MeshStandardMaterial({ color: 0x7a7a7a, roughness: 1 });
+          h = 1.2;
         }
+        const m = new THREE.Mesh(geom, mat);
+        const px = (rand()-0.5) * config.terrainSize;
+        const pz = (rand()-0.5) * config.terrainSize;
+        const py = 0.0 + h; // centrado aproximado
+        m.position.set(px, py, pz);
+        m.userData.radius = isTree ? 1.0 : 1.2; // para colisiones simples
+        scene.add(m); obstacles.push(m);
+      }
+    }
 
-        // Iniciar batalla
-        function startBattle() {
-            // Obtener tamaño del terreno
-            const terrainWidth = parseInt(document.getElementById('terrainWidth').value);
-            const terrainHeight = parseInt(document.getElementById('terrainHeight').value);
-            config.terrainWidth = terrainWidth;
-            config.terrainHeight = terrainHeight;
-            config.teamABase = new THREE.Vector3(-terrainWidth / 2 + 5, 0, 0);
-            config.teamBBase = new THREE.Vector3(terrainWidth / 2 - 5, 0, 0);
-
-            // Obtener composición de ejércitos
-            teamAComposition = {
-                guerrero: parseInt(document.getElementById('teamAWarriors').value),
-                arquero: parseInt(document.getElementById('teamAArchers').value),
-                mago: parseInt(document.getElementById('teamAMages').value)
-            };
-            teamBComposition = {
-                guerrero: parseInt(document.getElementById('teamBWarriors').value),
-                arquero: parseInt(document.getElementById('teamBArchers').value),
-                mago: parseInt(document.getElementById('teamBMages').value)
-            };
-
-            // Validar que haya al menos un NPC en cada equipo
-            const teamATotal = teamAComposition.guerrero + teamAComposition.arquero + teamAComposition.mago;
-            const teamBTotal = teamBComposition.guerrero + teamBComposition.arquero + teamBComposition.mago;
-            if (teamATotal < 1 || teamBTotal < 1) {
-                alert('Cada equipo debe tener al menos un NPC.');
-                return;
-            }
-
-            // Ocultar selección y mostrar controles y estadísticas
-            document.getElementById('armySelection').classList.add('hidden');
-            document.getElementById('controls').classList.remove('hidden');
-            document.getElementById('stats').classList.remove('hidden');
-
-            // Generar entorno
-            generateTerrain();
-            generateObstacles();
-            generateGrid();
-            generateNPCs();
-
-            // Iniciar batalla
-            battleStartTime = Date.now();
-            paused = false;
-            document.getElementById('pauseBtn').style.display = 'inline';
-            document.getElementById('resumeBtn').style.display = 'none';
-            document.getElementById('battleStatus').textContent = 'Batalla en curso';
-
-            animate();
-        }
-
-        // Generar terreno con Perlin Noise
-        function generateTerrain() {
-            const geometry = new THREE.PlaneGeometry(config.terrainWidth, config.terrainHeight, 32, 32);
-            const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
-            terrain = new THREE.Mesh(geometry, material);
-            terrain.rotation.x = -Math.PI / 2; // Rotar para que sea horizontal
-            scene.add(terrain);
-
-            // Aplicar elevaciones
-            const vertices = terrain.geometry.attributes.position.array;
-            for (let i = 2; i < vertices.length; i += 3) {
-                vertices[i] = perlinNoise(vertices[i - 2] / 10, vertices[i - 1] / 10) * 5;
-            }
-            terrain.geometry.attributes.position.needsUpdate = true;
-            terrain.geometry.computeVertexNormals();
-        }
-
-        // Implementación simple de Perlin Noise
-        function perlinNoise(x, y) {
-            const n = x + y * 57;
-            const nn = (n << 13) ^ n;
-            return (1.0 - ((nn * (nn * nn * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0) / 2;
-        }
-
-        // Generar obstáculos (árboles y rocas)
-        function generateObstacles() {
-            const numObstacles = Math.floor(config.terrainWidth * config.terrainHeight * config.obstacleDensity);
-            for (let i = 0; i < numObstacles; i++) {
-                const isTree = Math.random() > 0.5;
-                const geometry = isTree ? new THREE.CylinderGeometry(0.5, 0.5, 5, 8) : new THREE.BoxGeometry(2, 2, 2);
-                const material = new THREE.MeshBasicMaterial({ color: isTree ? 0x8B4513 : 0x808080 });
-                const obstacle = new THREE.Mesh(geometry, material);
-                obstacle.position.set(
-                    (Math.random() - 0.5) * config.terrainWidth,
-                    isTree ? 2.5 : 1,
-                    (Math.random() - 0.5) * config.terrainHeight
-                );
-                scene.add(obstacle);
-                obstacles.push(obstacle);
-            }
-        }
-
-        // Generar grid para pathfinding
-        function generateGrid() {
-            const gridWidth = Math.ceil(config.terrainWidth);
-            const gridHeight = Math.ceil(config.terrainHeight);
-            grid = Array.from({ length: gridWidth }, () => Array(gridHeight).fill(true));
-
-            obstacles.forEach(obstacle => {
-                const i = Math.floor(obstacle.position.x + config.terrainWidth / 2);
-                const j = Math.floor(obstacle.position.z + config.terrainHeight / 2);
-                if (i >= 0 && i < gridWidth && j >= 0 && j < gridHeight) {
-                    grid[i][j] = false;
-                }
-            });
-        }
-
-        // Generar NPCs según la composición seleccionada
-        function generateNPCs() {
-            npcs = [];
-            const teams = ['A', 'B'];
-            const compositions = [teamAComposition, teamBComposition];
-            teams.forEach((team, index) => {
-                const composition = compositions[index];
-                for (const type in composition) {
-                    for (let i = 0; i < composition[type]; i++) {
-                        const npc = {
-                            team,
-                            type,
-                            attributes: { ...config.attributes[type], vidaMax: config.attributes[type].vida },
-                            mesh: createNPCMesh(team, type),
-                            path: [],
-                            currentWaypointIndex: 0,
-                            lastPathTime: 0,
-                            currentTarget: null,
-                            status: 'vivo'
-                        };
-                        npc.mesh.position.set(
-                            team === 'A' ? -config.terrainWidth / 4 : config.terrainWidth / 4,
-                            1,
-                            (Math.random() - 0.5) * config.terrainHeight
-                        );
-                        scene.add(npc.mesh);
-                        npcs.push(npc);
-                    }
-                }
-            });
-        }
-
-        // Crear malla para NPC con barra de vida
-        function createNPCMesh(team, type) {
-            const group = new THREE.Group();
-            const geometry = new THREE.SphereGeometry(1, 16, 16);
-            const material = new THREE.MeshBasicMaterial({ color: team === 'A' ? 0xff0000 : 0x0000ff });
-            const sphere = new THREE.Mesh(geometry, material);
-            group.add(sphere);
-
-            // Barra de vida
-            const healthBar = new THREE.Mesh(
-                new THREE.BoxGeometry(2, 0.2, 0.2),
-                new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+    function generateNPCs(comp){
+      npcs = []; projectiles = [];
+      const teams = ['A','B'];
+      const colors = { A: 0xff4d4d, B: 0x4d7dff };
+      const sideX = { A: -config.terrainSize/3, B: config.terrainSize/3 };
+      teams.forEach(team => {
+        const conf = comp[team];
+        for(const type of config.npcTypes){
+          const n = conf[type]|0;
+          for(let i=0;i<n;i++){
+            const npc = createNPC(team, type, colors[team]);
+            const row = Math.floor(i/5), col = i%5;
+            npc.mesh.position.set(
+              sideX[team] + (rand()-0.5)*6,
+              1.1,
+              (row*2.0 - 8) + col*1.6 + (rand()-0.5)*1.5
             );
-            healthBar.position.set(0, 1.5, 0);
-            group.add(healthBar);
-            group.healthBar = healthBar;
-
-            return group;
+            scene.add(npc.mesh);
+            npcs.push(npc);
+          }
         }
+      });
+    }
 
-        // Bucle de animación
-        function animate() {
-            requestAnimationFrame(animate);
-            if (!paused) {
-                updateNPCs();
-                checkBattleStatus();
-            }
-            renderer.render(scene, camera);
-            controls.update();
+    function createNPC(team, type, color){
+      const group = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), new THREE.MeshStandardMaterial({ color, roughness: 0.8 }));
+      group.add(body);
+
+      // barra de vida (billboard sencillo)
+      const barBg = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.22, 0.22), new THREE.MeshBasicMaterial({ color: 0x222222 }));
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(1.98, 0.2, 0.2), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+      const barGroup = new THREE.Group();
+      barGroup.add(barBg); barGroup.add(bar); barGroup.position.set(0, 1.6, 0);
+      bar.position.x = -0.99 + 0.99; // centrado inicial
+      group.add(barGroup);
+
+      const base = config.attributes[type];
+      const stats = { vida: base.vida, vidaMax: base.vida, ataque: base.ataque, velocidad: base.velocidad, defensa: base.defensa, rango: base.rango, cadencia: base.cadencia };
+
+      return {
+        team, type, attributes: stats,
+        mesh: group,
+        healthBar: bar,
+        healthBarGroup: barGroup,
+        target: null,
+        status: 'vivo',
+        cooldown: 0
+      };
+    }
+
+    // ========================
+    // Bucle principal
+    // ========================
+    function animate(){
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta() * timeScale, 0.05); // tope por estabilidad
+      controls.update();
+
+      if(isRunning && !paused){
+        updateNPCs(dt);
+        updateProjectiles(dt);
+        checkBattleStatus();
+      }
+
+      // billboards de vida miran a cámara
+      for(const n of npcs){ if(n.healthBarGroup) n.healthBarGroup.lookAt(camera.position); }
+
+      renderer.render(scene, camera);
+    }
+
+    function updateNPCs(dt){
+      for(const npc of npcs){
+        if(npc.status !== 'vivo') continue;
+        if(!npc.target || npc.target.status !== 'vivo') npc.target = findNearestEnemy(npc);
+        if(!npc.target) continue;
+
+        const dist = npc.mesh.position.distanceTo(npc.target.mesh.position);
+        const inRange = dist <= npc.attributes.rango;
+        if(!inRange){
+          moveTowards(npc, npc.target, dt);
+        } else {
+          tryAttack(npc, npc.target);
         }
+        updateHealthBar(npc);
+      }
+    }
 
-        // Actualizar NPCs
-        function updateNPCs() {
-            npcs.forEach(npc => {
-                if (npc.status === 'vivo') {
-                    const healthRatio = npc.attributes.vida / npc.attributes.vidaMax;
-                    let attackTarget = findNearestEnemy(npc);
-                    let movementTarget;
+    function moveTowards(npc, target, dt){
+      const dir = new THREE.Vector3().subVectors(target.mesh.position, npc.mesh.position).normalize();
+      const step = npc.attributes.velocidad * dt;
+      npc.mesh.position.addScaledVector(dir, step);
 
-                    if (healthRatio > config.fleeThreshold) {
-                        movementTarget = attackTarget.mesh.position;
-                    } else {
-                        movementTarget = npc.team === 'A' ? config.teamABase : config.teamBBase;
-                    }
-
-                    // Recalcular camino cada segundo o si el objetivo cambia
-                    if (Date.now() - npc.lastPathTime > 1000 || npc.currentTarget !== attackTarget) {
-                        npc.currentTarget = attackTarget;
-                        npc.lastPathTime = Date.now();
-                        const startGrid = worldToGrid(npc.mesh.position);
-                        const goalGrid = worldToGrid(movementTarget);
-                        const pathGrid = aStar(startGrid, goalGrid, grid);
-                        if (pathGrid) {
-                            npc.path = pathGrid.map(p => gridToWorld(p));
-                            npc.currentWaypointIndex = 0;
-                        } else {
-                            npc.path = [];
-                        }
-                    }
-
-                    // Moverse a lo largo del camino
-                    if (npc.path.length > 0 && npc.currentWaypointIndex < npc.path.length) {
-                        const waypoint = npc.path[npc.currentWaypointIndex];
-                        const direction = new THREE.Vector3().subVectors(waypoint, npc.mesh.position).normalize();
-                        const speed = npc.attributes.velocidad;
-                        npc.mesh.position.add(direction.multiplyScalar(speed));
-
-                        // Verificar si está cerca del waypoint
-                        if (npc.mesh.position.distanceTo(waypoint) < 0.5) {
-                            npc.currentWaypointIndex++;
-                        }
-                    }
-
-                    // Atacar si está en rango
-                    if (attackTarget && isInRange(npc, attackTarget)) {
-                        attack(npc, attackTarget);
-                    }
-
-                    updateHealthBar(npc);
-                }
-            });
+      // evitar obstáculos aproximando círculos
+      for(const obs of obstacles){
+        const d = npc.mesh.position.distanceTo(obs.position);
+        const minD = 1.6 + (obs.userData.radius||1.0);
+        if(d < minD){
+          const avoid = new THREE.Vector3().subVectors(npc.mesh.position, obs.position).normalize();
+          npc.mesh.position.addScaledVector(avoid, (minD - d) * 0.6);
         }
+      }
 
-        // Encontrar enemigo más cercano
-        function findNearestEnemy(npc) {
-            let nearest = null;
-            let minDist = Infinity;
-            npcs.forEach(enemy => {
-                if (enemy.team !== npc.team && enemy.status === 'vivo') {
-                    const dist = npc.mesh.position.distanceTo(enemy.mesh.position);
-                    if (dist < minDist) {
-                        minDist = dist;
-                        nearest = enemy;
-                    }
-                }
-            });
-            return nearest;
+      // límites
+      npc.mesh.position.clamp(
+        new THREE.Vector3(-config.terrainSize/2, 1.1, -config.terrainSize/2),
+        new THREE.Vector3( config.terrainSize/2, 1.1,  config.terrainSize/2)
+      );
+    }
+
+    function lineOfSight(a, b){
+      // Chequeo simple: si un obstáculo está muy cerca del segmento AB, se considera bloqueado
+      const A = a.mesh.position, B = b.mesh.position;
+      const AB = new THREE.Vector3().subVectors(B, A);
+      const ab2 = AB.lengthSq();
+      for(const o of obstacles){
+        const AO = new THREE.Vector3().subVectors(o.position, A);
+        const t = THREE.MathUtils.clamp(AO.dot(AB)/ab2, 0, 1);
+        const P = new THREE.Vector3().copy(AB).multiplyScalar(t).add(A);
+        const d = P.distanceTo(o.position);
+        if(d < (o.userData.radius||1.0) + 0.6) return false;
+      }
+      return true;
+    }
+
+    function tryAttack(npc, target){
+      if(npc.cooldown > 0) { npc.cooldown -= clock.getDelta() * timeScale; return; }
+      // chequeo de línea de visión para distancia > melee
+      const ranged = npc.attributes.rango > 3.0;
+      if(ranged && !lineOfSight(npc, target)) return;
+
+      if(npc.type === 'guerrero'){
+        // daño directo
+        dealDamage(npc, target, npc.attributes.ataque);
+      } else {
+        // proyectil
+        spawnProjectile(npc, target);
+      }
+      npc.cooldown = npc.attributes.cadencia;
+    }
+
+    function dealDamage(attacker, target, raw){
+      const dmg = Math.max(0, raw - (target.attributes.defensa||0));
+      target.attributes.vida -= dmg;
+      if(target.attributes.vida <= 0){ target.status = 'muerto'; scene.remove(target.mesh); }
+    }
+
+    function spawnProjectile(npc, target){
+      const geom = new THREE.SphereGeometry(config.projectile.radius, 8, 8);
+      const mat = new THREE.MeshBasicMaterial({ color: npc.type === 'mago' ? 0xaa88ff : 0x222222 });
+      const m = new THREE.Mesh(geom, mat);
+      m.position.copy(npc.mesh.position).add(new THREE.Vector3(0, 0.2, 0));
+      const dir = new THREE.Vector3().subVectors(target.mesh.position, npc.mesh.position).normalize();
+      projectiles.push({ mesh: m, team: npc.team, damage: npc.attributes.ataque, vel: dir.multiplyScalar(config.projectile.speed), ttl: 2.5, target });
+      scene.add(m);
+    }
+
+    function updateProjectiles(dt){
+      for(let i=projectiles.length-1; i>=0; i--){
+        const p = projectiles[i];
+        p.mesh.position.addScaledVector(p.vel, dt);
+        p.ttl -= dt;
+        // impacta si llega cerca del target vivo
+        if(p.target && p.target.status==='vivo'){
+          if(p.mesh.position.distanceTo(p.target.mesh.position) < 1.1){
+            dealDamage({team:p.team}, p.target, p.damage);
+            scene.remove(p.mesh); disposeMesh(p.mesh); projectiles.splice(i,1); continue;
+          }
         }
+        if(p.ttl <= 0){ scene.remove(p.mesh); disposeMesh(p.mesh); projectiles.splice(i,1); }
+      }
+    }
 
-        // Convertir posición del mundo a grid
-        function worldToGrid(pos) {
-            const x = Math.floor(pos.x + config.terrainWidth / 2);
-            const z = Math.floor(pos.z + config.terrainHeight / 2);
-            return { x, z };
+    function updateHealthBar(npc){
+      const r = Math.max(0, npc.attributes.vida / npc.attributes.vidaMax);
+      npc.healthBar.scale.x = Math.max(0.001, r);
+      npc.healthBar.position.x = -0.99 + 0.99*r;
+      // verde -> rojo aproximado via HSL
+      const h = 0.33 * r; // 0.33 ≈ 120°
+      npc.healthBar.material.color.setHSL(h, 1, 0.5);
+    }
+
+    function findNearestEnemy(npc){
+      let nearest = null, minD = Infinity;
+      for(const e of npcs){
+        if(e.team === npc.team || e.status !== 'vivo') continue;
+        const d = npc.mesh.position.distanceTo(e.mesh.position);
+        if(d < minD){ minD = d; nearest = e; }
+      }
+      return nearest;
+    }
+
+    function checkBattleStatus(){
+      const aAlive = npcs.filter(n => n.team==='A' && n.status==='vivo').length;
+      const bAlive = npcs.filter(n => n.team==='B' && n.status==='vivo').length;
+      ui.teamAStatus.textContent = `Equipo A: ${aAlive} vivos`;
+      ui.teamBStatus.textContent = `Equipo B: ${bAlive} vivos`;
+      if(aAlive===0 || bAlive===0){
+        const winner = aAlive>0 ? 'Equipo A' : 'Equipo B';
+        const duration = ((performance.now() - battleStartTime)/1000).toFixed(2);
+        ui.battleStatus.textContent = `Ganador: ${winner}. Duración: ${duration}s`;
+        paused = true; isRunning = false;
+      }
+    }
+
+    // ========================
+    // Limpieza y utilidades
+    // ========================
+    function clearBattleEntities(removeEverything){
+      // Quita NPCs, proyectiles, terreno y obstáculos
+      for(const n of npcs){ scene.remove(n.mesh); disposeMesh(n.mesh); }
+      for(const p of projectiles){ scene.remove(p.mesh); disposeMesh(p.mesh); }
+      npcs.length = 0; projectiles.length = 0;
+      for(const o of obstacles){ scene.remove(o); disposeMesh(o); }
+      obstacles.length = 0;
+      if(terrain){ scene.remove(terrain); disposeMesh(terrain); terrain = null; }
+
+      // Si se pide completo, mantener luces y helpers, borrar resto
+      if(removeEverything){
+        const keep = new Set();
+        scene.traverse(obj => { if(obj.type.includes('Light') || obj instanceof THREE.GridHelper || obj instanceof THREE.Box3Helper) keep.add(obj); });
+        const toRemove = [];
+        scene.children.forEach(ch => { if(!keep.has(ch)) toRemove.push(ch); });
+        for(const ch of toRemove){ scene.remove(ch); disposeMesh(ch); }
+      }
+    }
+
+    function disposeMesh(obj){
+      if(!obj) return;
+      obj.traverse?.(child => {
+        if(child.geometry){ child.geometry.dispose?.(); }
+        if(child.material){
+          if(Array.isArray(child.material)) child.material.forEach(m => m.dispose?.());
+          else child.material.dispose?.();
         }
+      });
+    }
 
-        // Convertir posición de grid a mundo
-        function gridToWorld(gridPos) {
-            return new THREE.Vector3(
-                gridPos.x - config.terrainWidth / 2 + 0.5,
-                0,
-                gridPos.z - config.terrainHeight / 2 + 0.5
-            );
-        }
+    function resetToMenu(){ showMenu(); }
 
-        // Implementación de A*
-        function aStar(start, goal, grid) {
-            if (!isPassable(start, grid) || !isPassable(goal, grid)) return null;
-            const openSet = [start];
-            const cameFrom = {};
-            const gScore = {};
-            gScore[`${start.x},${start.z}`] = 0;
-            const fScore = {};
-            fScore[`${start.x},${start.z}`] = heuristic(start, goal);
-
-            while (openSet.length > 0) {
-                let current = openSet.reduce((minNode, node) => fScore[`${node.x},${node.z}`] < fScore[`${minNode.x},${minNode.z}`] ? node : minNode);
-                if (current.x === goal.x && current.z === goal.z) {
-                    return reconstructPath(cameFrom, current);
-                }
-                openSet.splice(openSet.indexOf(current), 1);
-                const neighbors = getNeighbors(current, grid);
-                for (let neighbor of neighbors) {
-                    const tentative_gScore = gScore[`${current.x},${current.z}`] + 1;
-                    const neighborKey = `${neighbor.x},${neighbor.z}`;
-                    if (!(neighborKey in gScore) || tentative_gScore < gScore[neighborKey]) {
-                        cameFrom[neighborKey] = current;
-                        gScore[neighborKey] = tentative_gScore;
-                        fScore[neighborKey] = gScore[neighborKey] + heuristic(neighbor, goal);
-                        if (!openSet.some(n => n.x === neighbor.x && n.z === neighbor.z)) {
-                            openSet.push(neighbor);
-                        }
-                    }
-                }
-            }
-            return null;
-        }
-
-        function heuristic(a, b) {
-            return Math.abs(a.x - b.x) + Math.abs(a.z - b.z); // Manhattan distance
-        }
-
-        function isPassable(pos, grid) {
-            return pos.x >= 0 && pos.x < grid.length && pos.z >= 0 && pos.z < grid[0].length && grid[pos.x][pos.z];
-        }
-
-        function getNeighbors(pos, grid) {
-            const neighbors = [];
-            const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-            for (let [dx, dz] of dirs) {
-                const nx = pos.x + dx;
-                const nz = pos.z + dz;
-                if (nx >= 0 && nx < grid.length && nz >= 0 && nz < grid[0].length && grid[nx][nz]) {
-                    neighbors.push({ x: nx, z: nz });
-                }
-            }
-            return neighbors;
-        }
-
-        function reconstructPath(cameFrom, current) {
-            const path = [current];
-            while (`${current.x},${current.z}` in cameFrom) {
-                current = cameFrom[`${current.x},${current.z}`];
-                path.unshift(current);
-            }
-            return path;
-        }
-
-        // Verificar si está en rango de ataque
-        function isInRange(npc, target) {
-            return npc.mesh.position.distanceTo(target.mesh.position) <= npc.attributes.rango;
-        }
-
-        // Realizar ataque
-        function attack(npc, target) {
-            const damage = Math.max(0, npc.attributes.ataque - target.attributes.defensa);
-            target.attributes.vida -= damage;
-            if (target.attributes.vida <= 0) {
-                target.status = 'muerto';
-                scene.remove(target.mesh);
-            }
-        }
-
-        // Actualizar barra de vida
-        function updateHealthBar(npc) {
-            const healthRatio = npc.attributes.vida / npc.attributes.vidaMax;
-            npc.mesh.healthBar.scale.x = healthRatio;
-            npc.mesh.healthBar.position.x = (1 - healthRatio) / 2; // Centrar la barra
-            npc.mesh.healthBar.material.color.setHSL(healthRatio * 0.3, 1, 0.5); // Verde a rojo
-        }
-
-        // Verificar estado de la batalla
-        function checkBattleStatus() {
-            const teamAAlive = npcs.filter(npc => npc.team === 'A' && npc.status === 'vivo').length;
-            const teamBAlive = npcs.filter(npc => npc.team === 'B' && npc.status === 'vivo').length;
-            document.getElementById('teamAStatus').textContent = `Equipo A: ${teamAAlive} vivos`;
-            document.getElementById('teamBStatus').textContent = `Equipo B: ${teamBAlive} vivos`;
-
-            if (teamAAlive === 0 || teamBAlive === 0) {
-                const winner = teamAAlive > 0 ? 'Equipo A' : 'Equipo B';
-                const duration = ((Date.now() - battleStartTime) / 1000).toFixed(2);
-                document.getElementById('battleStatus').textContent = `Ganador: ${winner}. Duración: ${duration}s`;
-                paused = true;
-            }
-        }
-
-        // Iniciar
-        init();
-        showArmySelection();
-    </script>
+    // ========================
+    // Arranque
+    // ========================
+    init();
+  </script>
 </body>
 </html>
