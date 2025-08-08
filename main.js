@@ -39,6 +39,110 @@ function mulberry32(a) {
 let rand = mulberry32(rngSeed);
 
 // ========================
+// Mapa de navegación
+// ========================
+let navGrid = null;
+
+function initNavGrid(){
+  const cellSize = 2;
+  const width = Math.floor(config.terrainSize / cellSize);
+  const height = Math.floor(config.terrainSize / cellSize);
+  navGrid = {
+    cellSize,
+    width,
+    height,
+    cells: Array.from({ length: height }, () =>
+      Array.from({ length: width }, () => ({ height: 0, walkable: true }))
+    )
+  };
+}
+
+function worldToGrid(x, z){
+  if(typeof x === 'object'){ z = x.z; x = x.x; }
+  const gx = Math.floor((x + config.terrainSize/2) / navGrid.cellSize);
+  const gz = Math.floor((z + config.terrainSize/2) / navGrid.cellSize);
+  return {
+    x: THREE.MathUtils.clamp(gx, 0, navGrid.width-1),
+    z: THREE.MathUtils.clamp(gz, 0, navGrid.height-1)
+  };
+}
+
+function gridToWorld(gx, gz){
+  const wx = gx * navGrid.cellSize - config.terrainSize/2 + navGrid.cellSize/2;
+  const wz = gz * navGrid.cellSize - config.terrainSize/2 + navGrid.cellSize/2;
+  const h = navGrid.cells[gz]?.[gx]?.height || 0;
+  return new THREE.Vector3(wx, h + 1.1, wz);
+}
+
+function isWalkable(gx, gz){
+  return !!(navGrid.cells[gz] && navGrid.cells[gz][gx] && navGrid.cells[gz][gx].walkable);
+}
+
+function heuristic(x1, z1, x2, z2){
+  return Math.hypot(x2 - x1, z2 - z1);
+}
+
+function findPath(start, end){
+  if(!navGrid) return null;
+  const s = worldToGrid(start);
+  const e = worldToGrid(end);
+  if(!isWalkable(e.x, e.z)) return null;
+
+  const open = [];
+  const closed = new Set();
+  const nodeKey = (x,z) => `${x},${z}`;
+  const nodes = new Map();
+
+  const startNode = { x:s.x, z:s.z, g:0, h:heuristic(s.x,s.z,e.x,e.z), f:0, parent:null };
+  startNode.f = startNode.h;
+  open.push(startNode);
+  nodes.set(nodeKey(s.x,s.z), startNode);
+
+  while(open.length){
+    open.sort((a,b) => a.f - b.f);
+    const cur = open.shift();
+    const ck = nodeKey(cur.x, cur.z);
+    if(cur.x === e.x && cur.z === e.z){
+      const path = [];
+      let n = cur;
+      while(n.parent){
+        path.push(gridToWorld(n.x, n.z));
+        n = n.parent;
+      }
+      return path.reverse();
+    }
+    closed.add(ck);
+
+    for(let dz=-1; dz<=1; dz++){
+      for(let dx=-1; dx<=1; dx++){
+        if(dx===0 && dz===0) continue;
+        const nx = cur.x + dx;
+        const nz = cur.z + dz;
+        if(nx<0 || nz<0 || nx>=navGrid.width || nz>=navGrid.height) continue;
+        if(!isWalkable(nx, nz)) continue;
+        const nk = nodeKey(nx, nz);
+        if(closed.has(nk)) continue;
+        const step = (dx===0 || dz===0) ? 1 : Math.SQRT2;
+        const heightCost = Math.abs(navGrid.cells[nz][nx].height - navGrid.cells[cur.z][cur.x].height);
+        const g = cur.g + step + heightCost;
+        let node = nodes.get(nk);
+        if(!node){
+          node = { x:nx, z:nz, g, h:heuristic(nx,nz,e.x,e.z), f:0, parent:cur };
+          node.f = node.g + node.h;
+          nodes.set(nk, node);
+          open.push(node);
+        } else if(g < node.g){
+          node.g = g;
+          node.parent = cur;
+          node.f = g + node.h;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// ========================
 // Inicialización
 // ========================
 function init() {
@@ -174,6 +278,7 @@ function startBattle(composition){
 // ========================
 function generateTerrain(){
   if(terrain) { scene.remove(terrain); disposeMesh(terrain); terrain = null; }
+  initNavGrid();
   const geom = new THREE.PlaneGeometry(config.terrainSize, config.terrainSize, 64, 64);
   // Elevación simple (value noise / hash noise suavizado)
   const pos = geom.attributes.position;
@@ -182,6 +287,16 @@ function generateTerrain(){
     const y = pos.getY(i) * 0.08;
     const h = fbmNoise(x, y) * 4.0; // altura máx ±4
     pos.setZ(i, h);
+  }
+  // Rellenar el mapa de navegación con alturas
+  for(let gz=0; gz<navGrid.height; gz++){
+    for(let gx=0; gx<navGrid.width; gx++){
+      const wx = (gx/navGrid.width - 0.5) * config.terrainSize;
+      const wz = (gz/navGrid.height - 0.5) * config.terrainSize;
+      const h = fbmNoise(wx*0.08, wz*0.08) * 4.0;
+      navGrid.cells[gz][gx].height = h;
+      navGrid.cells[gz][gx].walkable = true;
+    }
   }
   pos.needsUpdate = true;
   geom.computeVertexNormals();
@@ -237,6 +352,18 @@ function generateObstacles(){
     m.position.set(px, py, pz);
     m.userData.radius = isTree ? 1.0 : 1.2; // para colisiones simples
     scene.add(m); obstacles.push(m);
+
+    // marcar celdas como no caminables en el mapa
+    const g = worldToGrid(px, pz);
+    const rad = Math.ceil((m.userData.radius||1.0) / navGrid.cellSize);
+    for(let dz=-rad; dz<=rad; dz++){
+      for(let dx=-rad; dx<=rad; dx++){
+        const nx = g.x + dx, nz = g.z + dz;
+        if(nx>=0 && nz>=0 && nx<navGrid.width && nz<navGrid.height){
+          navGrid.cells[nz][nx].walkable = false;
+        }
+      }
+    }
   }
 }
 
@@ -287,7 +414,11 @@ function createNPC(team, type, color){
     healthBarGroup: barGroup,
     target: null,
     status: 'vivo',
-    cooldown: 0
+    cooldown: 0,
+    path: null,
+    pathIndex: 0,
+    pathTarget: null,
+    pathEnd: null
   };
 }
 
@@ -314,24 +445,57 @@ function animate(){
 function updateNPCs(dt){
   for(const npc of npcs){
     if(npc.status !== 'vivo') continue;
-    if(!npc.target || npc.target.status !== 'vivo') npc.target = findNearestEnemy(npc);
+    if(!npc.target || npc.target.status !== 'vivo'){
+      npc.target = findNearestEnemy(npc);
+      npc.path = null;
+    }
     if(!npc.target) continue;
+
+    // recalcular ruta si cambia el objetivo o se mueve
+    if(!npc.path || npc.pathTarget !== npc.target || (npc.pathEnd && npc.pathEnd.distanceTo(npc.target.mesh.position) > navGrid.cellSize)){
+      npc.path = findPath(npc.mesh.position, npc.target.mesh.position);
+      npc.pathIndex = 0;
+      npc.pathTarget = npc.target;
+      npc.pathEnd = npc.target.mesh.position.clone();
+    } else if(npc.path && npc.pathIndex < npc.path.length){
+      const next = npc.path[npc.pathIndex];
+      const g = worldToGrid(next);
+      if(!isWalkable(g.x, g.z)){
+        npc.path = findPath(npc.mesh.position, npc.target.mesh.position);
+        npc.pathIndex = 0;
+        npc.pathEnd = npc.target.mesh.position.clone();
+      }
+    }
 
     const dist = npc.mesh.position.distanceTo(npc.target.mesh.position);
     const inRange = dist <= npc.attributes.rango;
     if(!inRange){
-      moveTowards(npc, npc.target, dt);
+      moveTowards(npc, dt);
     } else {
+      npc.path = null;
       tryAttack(npc, npc.target);
     }
     updateHealthBar(npc);
   }
 }
 
-function moveTowards(npc, target, dt){
-  const dir = new THREE.Vector3().subVectors(target.mesh.position, npc.mesh.position).normalize();
-  const step = npc.attributes.velocidad * dt;
-  npc.mesh.position.addScaledVector(dir, step);
+function moveTowards(npc, dt){
+  if(npc.path && npc.pathIndex < npc.path.length){
+    const targetPos = npc.path[npc.pathIndex];
+    const dir = new THREE.Vector3().subVectors(targetPos, npc.mesh.position);
+    const dist = dir.length();
+    if(dist < 0.5){
+      npc.pathIndex++;
+    } else {
+      dir.normalize();
+      const step = npc.attributes.velocidad * dt;
+      npc.mesh.position.addScaledVector(dir, Math.min(step, dist));
+    }
+  } else if(npc.target){
+    const dir = new THREE.Vector3().subVectors(npc.target.mesh.position, npc.mesh.position).normalize();
+    const step = npc.attributes.velocidad * dt;
+    npc.mesh.position.addScaledVector(dir, step);
+  }
 
   // evitar obstáculos aproximando círculos
   for(const obs of obstacles){
