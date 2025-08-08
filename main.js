@@ -632,12 +632,42 @@ function dealDamage(attacker, target, raw){
 }
 
 function spawnProjectile(npc, target){
-  const geom = new THREE.SphereGeometry(config.projectile.radius, 8, 8);
-  const mat = new THREE.MeshBasicMaterial({ color: npc.type === 'mago' ? 0xaa88ff : 0x222222 });
-  const m = new THREE.Mesh(geom, mat);
-  m.position.copy(npc.mesh.position).add(new THREE.Vector3(0, 0.2, 0));
+  const startPos = npc.mesh.position.clone().add(new THREE.Vector3(0, 0.2, 0));
   const dir = new THREE.Vector3().subVectors(target.mesh.position, npc.mesh.position).normalize();
-  projectiles.push({ mesh: m, team: npc.team, damage: npc.attributes.ataque, vel: dir.multiplyScalar(config.projectile.speed), ttl: 2.5, target });
+
+  let m;
+  if(npc.type === 'arquero'){
+    // Arrow composed of a shaft and tip
+    const group = new THREE.Group();
+
+    const shaftGeom = new THREE.CylinderGeometry(0.03, 0.03, 0.8, 8);
+    const shaftMat = new THREE.MeshBasicMaterial({ color: 0x8b4513 });
+    const shaft = new THREE.Mesh(shaftGeom, shaftMat);
+    group.add(shaft);
+
+    const coneGeom = new THREE.ConeGeometry(0.06, 0.25, 8);
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xdddddd });
+    const cone = new THREE.Mesh(coneGeom, coneMat);
+    cone.position.y = 0.4 + 0.125; // place tip at end of shaft
+    group.add(cone);
+
+    group.position.copy(startPos);
+    group.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+    m = group;
+  } else {
+    const geom = new THREE.SphereGeometry(config.projectile.radius, 8, 8);
+    const mat = new THREE.MeshBasicMaterial({ color: npc.type === 'mago' ? 0xaa88ff : 0x222222 });
+    m = new THREE.Mesh(geom, mat);
+    m.position.copy(startPos);
+  }
+
+  // Simple trail from spawn to current position
+  const trailGeom = new THREE.BufferGeometry().setFromPoints([startPos.clone(), startPos.clone()]);
+  const trailMat = new THREE.LineBasicMaterial({ color: 0xffffff });
+  const trail = new THREE.Line(trailGeom, trailMat);
+  scene.add(trail);
+
+  projectiles.push({ mesh: m, team: npc.team, damage: npc.attributes.ataque, vel: dir.multiplyScalar(config.projectile.speed), ttl: 2.5, target, trail });
   scene.add(m);
 }
 
@@ -645,15 +675,36 @@ function updateProjectiles(dt){
   for(let i=projectiles.length-1; i>=0; i--){
     const p = projectiles[i];
     p.mesh.position.addScaledVector(p.vel, dt);
+
+    // orient projectile to follow its velocity
+    const dir = p.vel.clone().normalize();
+    p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+
+    // update trail
+    if(p.trail){
+      const posAttr = p.trail.geometry.attributes.position;
+      const arr = posAttr.array;
+      arr[3] = p.mesh.position.x;
+      arr[4] = p.mesh.position.y;
+      arr[5] = p.mesh.position.z;
+      posAttr.needsUpdate = true;
+    }
+
     p.ttl -= dt;
     // impacta si llega cerca del target vivo
     if(p.target && p.target.status==='vivo'){
       if(p.mesh.position.distanceTo(p.target.mesh.position) < 1.1){
         dealDamage({team:p.team}, p.target, p.damage);
-        scene.remove(p.mesh); disposeMesh(p.mesh); projectiles.splice(i,1); continue;
+        scene.remove(p.mesh); disposeMesh(p.mesh);
+        if(p.trail){ scene.remove(p.trail); disposeMesh(p.trail); }
+        projectiles.splice(i,1); continue;
       }
     }
-    if(p.ttl <= 0){ scene.remove(p.mesh); disposeMesh(p.mesh); projectiles.splice(i,1); }
+    if(p.ttl <= 0){
+      scene.remove(p.mesh); disposeMesh(p.mesh);
+      if(p.trail){ scene.remove(p.trail); disposeMesh(p.trail); }
+      projectiles.splice(i,1);
+    }
   }
 }
 
@@ -695,7 +746,10 @@ function checkBattleStatus(){
 function clearBattleEntities(removeEverything){
   // Quita NPCs, proyectiles, terreno y obstáculos
   for(const n of npcs){ scene.remove(n.mesh); disposeMesh(n.mesh); }
-  for(const p of projectiles){ scene.remove(p.mesh); disposeMesh(p.mesh); }
+  for(const p of projectiles){
+    scene.remove(p.mesh); disposeMesh(p.mesh);
+    if(p.trail){ scene.remove(p.trail); disposeMesh(p.trail); }
+  }
   npcs.length = 0; projectiles.length = 0;
   for(const o of obstacles){ scene.remove(o); disposeMesh(o); }
   obstacles.length = 0;
