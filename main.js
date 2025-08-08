@@ -528,49 +528,64 @@ function updateNPCs(dt){
 }
 
 function moveTowards(npc, dt){
+  let targetPos = null;
+
   if(npc.path && npc.pathIndex < npc.path.length){
-    const targetPos = npc.path[npc.pathIndex];
-    const dir = new THREE.Vector3().subVectors(targetPos, npc.mesh.position);
-    dir.y = 0;
-    const dist = dir.length();
-    if(dist < 0.5){
+    targetPos = npc.path[npc.pathIndex];
+    const distNode = npc.mesh.position.distanceTo(targetPos);
+    if(distNode < 0.5){
       npc.pathIndex++;
-    } else {
-      dir.normalize();
-      const step = npc.attributes.velocidad * dt;
-      const move = Math.min(step, dist);
-      const candidate = npc.mesh.position.clone().addScaledVector(dir, move);
-      const h1 = getTerrainHeight(npc.mesh.position.x, npc.mesh.position.z);
-      const h2 = getTerrainHeight(candidate.x, candidate.z);
-      const horiz = Math.hypot(candidate.x - npc.mesh.position.x, candidate.z - npc.mesh.position.z);
-      const slope = horiz > 0 ? Math.abs(h2 - h1) / horiz : 0;
-      if(slope <= config.maxSlope){
-        npc.mesh.position.copy(candidate);
-      }
+      targetPos = null; // recalcular en siguiente cuadro
     }
   } else if(npc.target){
-    const dir = new THREE.Vector3().subVectors(npc.target.mesh.position, npc.mesh.position);
-    dir.y = 0;
-    dir.normalize();
-    const step = npc.attributes.velocidad * dt;
-    const candidate = npc.mesh.position.clone().addScaledVector(dir, step);
-    const h1 = getTerrainHeight(npc.mesh.position.x, npc.mesh.position.z);
-    const h2 = getTerrainHeight(candidate.x, candidate.z);
-    const horiz = Math.hypot(candidate.x - npc.mesh.position.x, candidate.z - npc.mesh.position.z);
-    const slope = horiz > 0 ? Math.abs(h2 - h1) / horiz : 0;
-    if(slope <= config.maxSlope){
-      npc.mesh.position.copy(candidate);
+    targetPos = npc.target.mesh.position;
+  }
+
+  if(!targetPos) return;
+
+  // =============================
+  // Vector de búsqueda/arribo
+  // =============================
+  const desired = new THREE.Vector3().subVectors(targetPos, npc.mesh.position);
+  desired.y = 0;
+  const dist = desired.length();
+  const slowingRadius = 3.5;
+  const desiredSpeed = dist < slowingRadius ? npc.attributes.velocidad * (dist / slowingRadius) : npc.attributes.velocidad;
+  desired.setLength(desiredSpeed);
+
+  // =============================
+  // Desviación por obstáculos
+  // =============================
+  const avoid = new THREE.Vector3();
+  const forward = desired.clone().normalize();
+  for(const obs of obstacles){
+    const offset = new THREE.Vector3().subVectors(obs.position, npc.mesh.position);
+    const ahead = offset.dot(forward);
+    if(ahead <= 0) continue; // solo evitar los que están delante
+    const radius = 1.6 + (obs.userData.radius || 1.0);
+    const distObs = offset.length();
+    const danger = radius * 2;
+    if(distObs < danger){
+      const strength = (danger - distObs) / danger;
+      avoid.add(offset.normalize().multiplyScalar(-strength * npc.attributes.velocidad));
     }
   }
 
-  // evitar obstáculos aproximando círculos
-  for(const obs of obstacles){
-    const d = npc.mesh.position.distanceTo(obs.position);
-    const minD = 1.6 + (obs.userData.radius||1.0);
-    if(d < minD){
-      const avoid = new THREE.Vector3().subVectors(npc.mesh.position, obs.position).normalize();
-      npc.mesh.position.addScaledVector(avoid, (minD - d) * 0.6);
-    }
+  // =============================
+  // Combinación y movimiento
+  // =============================
+  const steering = desired.add(avoid);
+  if(steering.lengthSq() === 0) return;
+
+  const step = steering.length() * dt;
+  const direction = steering.normalize();
+  const candidate = npc.mesh.position.clone().addScaledVector(direction, step);
+  const h1 = getTerrainHeight(npc.mesh.position.x, npc.mesh.position.z);
+  const h2 = getTerrainHeight(candidate.x, candidate.z);
+  const horiz = Math.hypot(candidate.x - npc.mesh.position.x, candidate.z - npc.mesh.position.z);
+  const slope = horiz > 0 ? Math.abs(h2 - h1) / horiz : 0;
+  if(slope <= config.maxSlope){
+    npc.mesh.position.copy(candidate);
   }
 
   // límites
