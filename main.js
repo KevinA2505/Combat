@@ -236,16 +236,25 @@ function showMenu(){
 }
 
 function readComposition(){
+  function parseField(id, desc){
+    const value = document.getElementById(id).value;
+    const parsed = parseInt(value, 10);
+    if (isNaN(parsed)) {
+      alert(`Valor inválido para ${desc}. Se usará 0.`);
+    }
+    return parsed || 0;
+  }
+
   return {
     A: {
-      guerrero: parseInt(document.getElementById('teamAWarriors').value||'0',10),
-      arquero:  parseInt(document.getElementById('teamAArchers').value||'0',10),
-      mago:     parseInt(document.getElementById('teamAMages').value||'0',10)
+      guerrero: parseField('teamAWarriors', 'guerreros del Equipo A'),
+      arquero:  parseField('teamAArchers', 'arqueros del Equipo A'),
+      mago:     parseField('teamAMages', 'magos del Equipo A')
     },
     B: {
-      guerrero: parseInt(document.getElementById('teamBWarriors').value||'0',10),
-      arquero:  parseInt(document.getElementById('teamBArchers').value||'0',10),
-      mago:     parseInt(document.getElementById('teamBMages').value||'0',10)
+      guerrero: parseField('teamBWarriors', 'guerreros del Equipo B'),
+      arquero:  parseField('teamBArchers', 'arqueros del Equipo B'),
+      mago:     parseField('teamBMages', 'magos del Equipo B')
     }
   };
 }
