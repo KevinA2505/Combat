@@ -87,20 +87,27 @@ function onResize(){
 }
 
 function startBattle(composition){
-  if(!validateComp(composition)) { alert('Cada equipo debe tener al menos un NPC.'); return; }
-  clearBattleEntities(true);
-  setSeed(parseInt(ui.seed.value||'42', 10));
+  console.log('startBattle: begin');
+  try {
+    if(!validateComp(composition)) { alert('Cada equipo debe tener al menos un NPC.'); return; }
+    clearBattleEntities(true);
+    setSeed(parseInt(ui.seed.value||'42', 10));
 
-  ui.armySelection.classList.add('hidden');
-  ui.controls.classList.remove('hidden');
-  ui.stats.classList.remove('hidden');
+    ui.armySelection.classList.add('hidden');
+    ui.controls.classList.remove('hidden');
+    ui.stats.classList.remove('hidden');
 
-  generateTerrain();
-  generateObstacles();
-  generateNPCs(composition);
+    generateTerrain();
+    generateObstacles();
+    generateNPCs(composition);
 
-  battleStartTime = performance.now();
-  paused = false; isRunning = true; ui.battleStatus.textContent = 'Batalla en curso…';
+    battleStartTime = performance.now();
+    paused = false; isRunning = true; ui.battleStatus.textContent = 'Batalla en curso…';
+    console.log('startBattle: end');
+  } catch (e) {
+    alert('Ocurrió un error al iniciar la batalla.');
+    console.error(e);
+  }
 }
 
 function animate(){
