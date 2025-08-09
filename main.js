@@ -24,7 +24,7 @@ const config = {
 // Variables globales
 // ========================
 let scene, camera, renderer, controls, clock;
-let terrain, npcs = [], obstacles = [], projectiles = [];
+let terrain, npcs = [], obstacles = [], projectiles = [], particleBursts = [];
 let ui = {}, paused = false, battleStartTime = 0, timeScale = 1, isRunning = false;
 let rngSeed = 42;
 
@@ -628,6 +628,7 @@ function tryAttack(npc, target){
 function dealDamage(attacker, target, raw){
   const dmg = Math.max(0, raw - (target.attributes.defensa||0));
   target.attributes.vida -= dmg;
+  spawnHitParticles(target.mesh.position);
   if(target.attributes.vida <= 0){ target.status = 'muerto'; scene.remove(target.mesh); }
 }
 
@@ -635,7 +636,7 @@ function spawnProjectile(npc, target){
   const startPos = npc.mesh.position.clone().add(new THREE.Vector3(0, 0.2, 0));
   const dir = new THREE.Vector3().subVectors(target.mesh.position, npc.mesh.position).normalize();
 
-  let m;
+  let m, trail, light;
   if(npc.type === 'arquero'){
     // Arrow composed of a shaft and tip
     const group = new THREE.Group();
@@ -654,21 +655,66 @@ function spawnProjectile(npc, target){
     group.position.copy(startPos);
     group.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
     m = group;
+
+    const trailGeom = new THREE.BufferGeometry().setFromPoints([startPos.clone(), startPos.clone()]);
+    const trailMat = new THREE.LineBasicMaterial({ color: 0xffffff });
+    trail = new THREE.Line(trailGeom, trailMat);
+    trail.userData.type = 'line';
+    scene.add(trail);
+  } else if(npc.type === 'mago'){
+    const mat = new THREE.SpriteMaterial({ color: 0x8844ff, transparent: true, blending: THREE.AdditiveBlending });
+    m = new THREE.Sprite(mat);
+    m.position.copy(startPos);
+    m.scale.set(0.6,0.6,0.6);
+
+    light = new THREE.PointLight(0x8844ff, 1, 5);
+    light.position.copy(startPos);
+    scene.add(light);
+
+    const count = 20;
+    const trailGeom = new THREE.BufferGeometry();
+    const positions = new Float32Array(count*3);
+    trailGeom.setAttribute('position', new THREE.BufferAttribute(positions,3));
+    const trailMat = new THREE.PointsMaterial({ color: 0x8844ff, size: 0.15, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+    trail = new THREE.Points(trailGeom, trailMat);
+    trail.userData.type = 'particle';
+    scene.add(trail);
   } else {
     const geom = new THREE.SphereGeometry(config.projectile.radius, 8, 8);
-    const mat = new THREE.MeshBasicMaterial({ color: npc.type === 'mago' ? 0xaa88ff : 0x222222 });
+    const mat = new THREE.MeshBasicMaterial({ color: 0x222222 });
     m = new THREE.Mesh(geom, mat);
     m.position.copy(startPos);
+
+    const trailGeom = new THREE.BufferGeometry().setFromPoints([startPos.clone(), startPos.clone()]);
+    const trailMat = new THREE.LineBasicMaterial({ color: 0xffffff });
+    trail = new THREE.Line(trailGeom, trailMat);
+    trail.userData.type = 'line';
+    scene.add(trail);
   }
 
-  // Simple trail from spawn to current position
-  const trailGeom = new THREE.BufferGeometry().setFromPoints([startPos.clone(), startPos.clone()]);
-  const trailMat = new THREE.LineBasicMaterial({ color: 0xffffff });
-  const trail = new THREE.Line(trailGeom, trailMat);
-  scene.add(trail);
-
-  projectiles.push({ mesh: m, team: npc.team, damage: npc.attributes.ataque, vel: dir.multiplyScalar(config.projectile.speed), ttl: 2.5, target, trail });
+  projectiles.push({ mesh: m, team: npc.team, damage: npc.attributes.ataque, vel: dir.multiplyScalar(config.projectile.speed), ttl: 2.5, target, trail, light });
   scene.add(m);
+}
+
+function spawnHitParticles(pos){
+  const count = 20;
+  const geom = new THREE.BufferGeometry();
+  const positions = new Float32Array(count*3);
+  const velocities = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    positions[3*i] = pos.x;
+    positions[3*i+1] = pos.y;
+    positions[3*i+2] = pos.z;
+    const dir = new THREE.Vector3(Math.random()-0.5, Math.random(), Math.random()-0.5).normalize().multiplyScalar(4);
+    velocities[3*i] = dir.x;
+    velocities[3*i+1] = dir.y;
+    velocities[3*i+2] = dir.z;
+  }
+  geom.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  const mat = new THREE.PointsMaterial({ color: 0x8844ff, size: 0.2, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+  const points = new THREE.Points(geom, mat);
+  scene.add(points);
+  particleBursts.push({ points, velocities, ttl: 0.5 });
 }
 
 function updateProjectiles(dt){
@@ -680,13 +726,26 @@ function updateProjectiles(dt){
     const dir = p.vel.clone().normalize();
     p.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
 
+    if(p.light){ p.light.position.copy(p.mesh.position); }
+
     // update trail
     if(p.trail){
       const posAttr = p.trail.geometry.attributes.position;
       const arr = posAttr.array;
-      arr[3] = p.mesh.position.x;
-      arr[4] = p.mesh.position.y;
-      arr[5] = p.mesh.position.z;
+      if(p.trail.userData.type === 'line'){
+        arr[3] = p.mesh.position.x;
+        arr[4] = p.mesh.position.y;
+        arr[5] = p.mesh.position.z;
+      } else if(p.trail.userData.type === 'particle'){
+        for(let j=arr.length-3; j>=3; j-=3){
+          arr[j] = arr[j-3];
+          arr[j+1] = arr[j-2];
+          arr[j+2] = arr[j-1];
+        }
+        arr[0] = p.mesh.position.x;
+        arr[1] = p.mesh.position.y;
+        arr[2] = p.mesh.position.z;
+      }
       posAttr.needsUpdate = true;
     }
 
@@ -697,13 +756,33 @@ function updateProjectiles(dt){
         dealDamage({team:p.team}, p.target, p.damage);
         scene.remove(p.mesh); disposeMesh(p.mesh);
         if(p.trail){ scene.remove(p.trail); disposeMesh(p.trail); }
+        if(p.light){ scene.remove(p.light); }
         projectiles.splice(i,1); continue;
       }
     }
     if(p.ttl <= 0){
       scene.remove(p.mesh); disposeMesh(p.mesh);
       if(p.trail){ scene.remove(p.trail); disposeMesh(p.trail); }
+      if(p.light){ scene.remove(p.light); }
       projectiles.splice(i,1);
+    }
+  }
+
+  // update hit particle bursts
+  for(let i=particleBursts.length-1; i>=0; i--){
+    const b = particleBursts[i];
+    const posAttr = b.points.geometry.attributes.position;
+    const arr = posAttr.array;
+    for(let j=0; j<arr.length; j+=3){
+      arr[j]   += b.velocities[j] * dt;
+      arr[j+1] += b.velocities[j+1] * dt;
+      arr[j+2] += b.velocities[j+2] * dt;
+    }
+    posAttr.needsUpdate = true;
+    b.ttl -= dt;
+    if(b.ttl <= 0){
+      scene.remove(b.points); disposeMesh(b.points);
+      particleBursts.splice(i,1);
     }
   }
 }
@@ -749,8 +828,11 @@ function clearBattleEntities(removeEverything){
   for(const p of projectiles){
     scene.remove(p.mesh); disposeMesh(p.mesh);
     if(p.trail){ scene.remove(p.trail); disposeMesh(p.trail); }
+    if(p.light){ scene.remove(p.light); }
   }
   npcs.length = 0; projectiles.length = 0;
+  for(const b of particleBursts){ scene.remove(b.points); disposeMesh(b.points); }
+  particleBursts.length = 0;
   for(const o of obstacles){ scene.remove(o); disposeMesh(o); }
   obstacles.length = 0;
   if(terrain){ scene.remove(terrain); disposeMesh(terrain); terrain = null; }
