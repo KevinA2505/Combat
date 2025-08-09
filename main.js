@@ -195,41 +195,54 @@ function init() {
     new THREE.Vector3( config.terrainSize/2, 0,  config.terrainSize/2)
   ), 0x333333); scene.add(box);
 
+  // Utilidad para obtener elementos de UI con validación
+  function getEl(id) {
+    const el = document.getElementById(id);
+    if (!el) console.error(`Elemento con id "${id}" no encontrado`);
+    return el;
+  }
+
   // UI refs
-  ui.start = document.getElementById('startBattleBtn');
-  ui.quick = document.getElementById('quickSkirmishBtn');
-  ui.pause = document.getElementById('pauseBtn');
-  ui.resume = document.getElementById('resumeBtn');
-  ui.restart = document.getElementById('restartBtn');
-  ui.resetCam = document.getElementById('resetCamBtn');
-  ui.runtimeSpeed = document.getElementById('runtimeSpeed');
-  ui.seed = document.getElementById('seedInput');
-  ui.speedSlider = document.getElementById('speedSlider');
-  ui.armySelection = document.getElementById('armySelection');
-  ui.controls = document.getElementById('controls');
-  ui.stats = document.getElementById('stats');
-  ui.teamAStatus = document.getElementById('teamAStatus');
-  ui.teamBStatus = document.getElementById('teamBStatus');
-  ui.battleStatus = document.getElementById('battleStatus');
+  ui.start = getEl('startBattleBtn');
+  ui.quick = getEl('quickSkirmishBtn');
+  ui.pause = getEl('pauseBtn');
+  ui.resume = getEl('resumeBtn');
+  ui.restart = getEl('restartBtn');
+  ui.resetCam = getEl('resetCamBtn');
+  ui.runtimeSpeed = getEl('runtimeSpeed');
+  ui.seed = getEl('seedInput');
+  ui.speedSlider = getEl('speedSlider');
+  ui.armySelection = getEl('armySelection');
+  ui.controls = getEl('controls');
+  ui.stats = getEl('stats');
+  ui.teamAStatus = getEl('teamAStatus');
+  ui.teamBStatus = getEl('teamBStatus');
+  ui.battleStatus = getEl('battleStatus');
 
   // Eventos UI
-  ui.start.addEventListener('click', () => startBattle(readComposition()));
-  ui.quick.addEventListener('click', () => {
-    document.getElementById('teamAWarriors').value = 5;
-    document.getElementById('teamAArchers').value = 3;
-    document.getElementById('teamAMages').value = 2;
-    document.getElementById('teamBWarriors').value = 5;
-    document.getElementById('teamBArchers').value = 3;
-    document.getElementById('teamBMages').value = 2;
+  ui.start && ui.start.addEventListener('click', () => startBattle(readComposition()));
+  ui.quick && ui.quick.addEventListener('click', () => {
+    const aWar = document.getElementById('teamAWarriors');
+    const aArc = document.getElementById('teamAArchers');
+    const aMag = document.getElementById('teamAMages');
+    const bWar = document.getElementById('teamBWarriors');
+    const bArc = document.getElementById('teamBArchers');
+    const bMag = document.getElementById('teamBMages');
+    if (aWar) aWar.value = 5; else console.error('Elemento "teamAWarriors" no encontrado');
+    if (aArc) aArc.value = 3; else console.error('Elemento "teamAArchers" no encontrado');
+    if (aMag) aMag.value = 2; else console.error('Elemento "teamAMages" no encontrado');
+    if (bWar) bWar.value = 5; else console.error('Elemento "teamBWarriors" no encontrado');
+    if (bArc) bArc.value = 3; else console.error('Elemento "teamBArchers" no encontrado');
+    if (bMag) bMag.value = 2; else console.error('Elemento "teamBMages" no encontrado');
     startBattle(readComposition());
   });
-  ui.pause.addEventListener('click', () => { paused = true; ui.pause.classList.add('hidden'); ui.resume.classList.remove('hidden'); });
-  ui.resume.addEventListener('click', () => { paused = false; ui.resume.classList.add('hidden'); ui.pause.classList.remove('hidden'); });
-  ui.restart.addEventListener('click', resetToMenu);
-  ui.resetCam.addEventListener('click', () => { camera.position.set(0, 62, 68); controls.target.set(0,0,0); });
-  ui.runtimeSpeed.addEventListener('input', e => timeScale = parseFloat(e.target.value));
-  ui.speedSlider.addEventListener('input', e => timeScale = parseFloat(e.target.value));
-  ui.seed.addEventListener('change', e => { rngSeed = parseInt(e.target.value||'42', 10); rand = mulberry32(rngSeed); });
+  ui.pause && ui.pause.addEventListener('click', () => { paused = true; ui.pause.classList.add('hidden'); ui.resume.classList.remove('hidden'); });
+  ui.resume && ui.resume.addEventListener('click', () => { paused = false; ui.resume.classList.add('hidden'); ui.pause.classList.remove('hidden'); });
+  ui.restart && ui.restart.addEventListener('click', resetToMenu);
+  ui.resetCam && ui.resetCam.addEventListener('click', () => { camera.position.set(0, 62, 68); controls.target.set(0,0,0); });
+  ui.runtimeSpeed && ui.runtimeSpeed.addEventListener('input', e => timeScale = parseFloat(e.target.value));
+  ui.speedSlider && ui.speedSlider.addEventListener('input', e => timeScale = parseFloat(e.target.value));
+  ui.seed && ui.seed.addEventListener('change', e => { rngSeed = parseInt(e.target.value||'42', 10); rand = mulberry32(rngSeed); });
 
   window.addEventListener('resize', onResize);
 
@@ -863,4 +876,4 @@ function resetToMenu(){ showMenu(); }
 // ========================
 // Arranque
 // ========================
-init();
+window.addEventListener('DOMContentLoaded', init);
